@@ -3,8 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
+import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatDate, formatNumber } from "@/admin/utils/format";
+import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteCategory,
   listCategories,
@@ -14,6 +17,7 @@ import {
 import type { AdminCategoryRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +79,7 @@ export default function AdminCategoriesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminCategoryRecord | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const categoriesQuery = useQuery({
     queryKey: ["admin-categories"],
@@ -135,6 +140,7 @@ export default function AdminCategoriesPage() {
       );
     });
   }, [categoriesQuery.data, search]);
+  const bulkSelection = useBulkSelection(filteredRows);
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
@@ -180,6 +186,54 @@ export default function AdminCategoriesPage() {
     });
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (selectedRows: AdminCategoryRecord[]) => {
+      for (const row of selectedRows) {
+        await deleteCategory(row.id);
+      }
+      return selectedRows;
+    },
+    onSuccess: async (deletedRows) => {
+      for (const row of deletedRows) {
+        await logAdminAction({
+          action: "category.delete",
+          entityType: "category",
+          entityId: row.id,
+          payload: { name: row.name, bulk: true },
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
+      bulkSelection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`${deletedRows.length} categorias eliminadas`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudieron eliminar las categorias seleccionadas");
+    },
+  });
+
+  const onExportSelected = () => {
+    try {
+      exportRowsToExcel({
+        rows: bulkSelection.selectedRows,
+        columns: [
+          { header: "Categoria", value: (row) => row.name, width: 28 },
+          { header: "Slug", value: (row) => row.slug || "", width: 24 },
+          { header: "Padre", value: (row) => row.parentName || "", width: 24 },
+          { header: "Activa", value: (row) => (row.isActive ? "Si" : "No"), width: 10 },
+          { header: "Productos", value: (row) => row.productCount ?? 0, width: 12 },
+          { header: "Orden", value: (row) => row.sortOrder, width: 10 },
+          { header: "Actualizada", value: (row) => formatDate(row.updatedAt), width: 20 },
+        ],
+        fileName: `categorias_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: "Categorias",
+      });
+      toast.success("Excel exportado correctamente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo exportar el Excel");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -202,9 +256,26 @@ export default function AdminCategoriesPage() {
           </p>
         </div>
 
+        {bulkSelection.selectedCount > 0 ? (
+          <BulkActionsBar
+            selectedCount={bulkSelection.selectedCount}
+            onExport={onExportSelected}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={bulkSelection.clearSelection}
+            isDeleting={bulkDeleteMutation.isPending}
+          />
+        ) : null}
+
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={bulkSelection.allSelected ? true : bulkSelection.someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => bulkSelection.setAllSelected(Boolean(checked))}
+                  aria-label="Seleccionar todas"
+                />
+              </TableHead>
               <TableHead>Categoria</TableHead>
               <TableHead>Padre</TableHead>
               <TableHead>Estado</TableHead>
@@ -217,7 +288,7 @@ export default function AdminCategoriesPage() {
           <TableBody>
             {categoriesQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Cargando categorias...
                 </TableCell>
               </TableRow>
@@ -225,7 +296,7 @@ export default function AdminCategoriesPage() {
 
             {categoriesQuery.error ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-destructive">
+                <TableCell colSpan={8} className="text-center text-destructive">
                   {categoriesQuery.error instanceof Error ? categoriesQuery.error.message : "No se pudieron cargar categorias"}
                 </TableCell>
               </TableRow>
@@ -233,6 +304,13 @@ export default function AdminCategoriesPage() {
 
             {filteredRows.map((category) => (
               <TableRow key={category.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={bulkSelection.isSelected(category.id)}
+                    onCheckedChange={(checked) => bulkSelection.setRowSelected(category.id, Boolean(checked))}
+                    aria-label={`Seleccionar categoria ${category.name}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div>
                     <p className="font-medium">{category.name}</p>
@@ -263,7 +341,7 @@ export default function AdminCategoriesPage() {
 
             {!categoriesQuery.isLoading && !categoriesQuery.error && !filteredRows.length ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No se encontraron categorias.
                 </TableCell>
               </TableRow>
@@ -393,6 +471,27 @@ export default function AdminCategoriesPage() {
               }}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar categorias seleccionadas</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Se eliminaran ${bulkSelection.selectedCount} categorias. Si tienen productos asociados, la eliminacion puede fallar.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void bulkDeleteMutation.mutateAsync(bulkSelection.selectedRows);
+              }}
+            >
+              Eliminar seleccionadas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -3,12 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
+import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatDate } from "@/admin/utils/format";
+import { exportRowsToExcel } from "@/admin/utils/excel";
 import { deleteBrand, listBrands, logAdminAction, upsertBrand } from "@/admin/services/adminCatalogService";
 import type { AdminBrandRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +61,7 @@ export default function AdminBrandsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminBrandRecord | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const brandsQuery = useQuery({
     queryKey: ["admin-brands"],
@@ -111,6 +116,7 @@ export default function AdminBrandsPage() {
 
     return (brandsQuery.data || []).filter((brand) => brand.name.toLowerCase().includes(safeSearch));
   }, [brandsQuery.data, search]);
+  const bulkSelection = useBulkSelection(filteredRows);
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
@@ -143,6 +149,52 @@ export default function AdminBrandsPage() {
     });
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (selectedRows: AdminBrandRecord[]) => {
+      for (const row of selectedRows) {
+        await deleteBrand(row.id);
+      }
+      return selectedRows;
+    },
+    onSuccess: async (deletedRows) => {
+      for (const row of deletedRows) {
+        await logAdminAction({
+          action: "brand.delete",
+          entityType: "brand",
+          entityId: row.id,
+          payload: { name: row.name, bulk: true },
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
+      bulkSelection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`${deletedRows.length} marcas eliminadas`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudieron eliminar las marcas seleccionadas");
+    },
+  });
+
+  const onExportSelected = () => {
+    try {
+      exportRowsToExcel({
+        rows: bulkSelection.selectedRows,
+        columns: [
+          { header: "Marca", value: (row) => row.name, width: 28 },
+          { header: "Logo", value: (row) => row.logoUrl || "", width: 40 },
+          { header: "Activa", value: (row) => (row.isActive ? "Si" : "No"), width: 10 },
+          { header: "Productos", value: (row) => row.productCount ?? 0, width: 12 },
+          { header: "Actualizada", value: (row) => formatDate(row.updatedAt), width: 20 },
+        ],
+        fileName: `marcas_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: "Marcas",
+      });
+      toast.success("Excel exportado correctamente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo exportar el Excel");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -165,9 +217,26 @@ export default function AdminBrandsPage() {
           </p>
         </div>
 
+        {bulkSelection.selectedCount > 0 ? (
+          <BulkActionsBar
+            selectedCount={bulkSelection.selectedCount}
+            onExport={onExportSelected}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={bulkSelection.clearSelection}
+            isDeleting={bulkDeleteMutation.isPending}
+          />
+        ) : null}
+
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={bulkSelection.allSelected ? true : bulkSelection.someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => bulkSelection.setAllSelected(Boolean(checked))}
+                  aria-label="Seleccionar todas"
+                />
+              </TableHead>
               <TableHead>Marca</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Productos</TableHead>
@@ -178,7 +247,7 @@ export default function AdminBrandsPage() {
           <TableBody>
             {brandsQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   Cargando marcas...
                 </TableCell>
               </TableRow>
@@ -186,7 +255,7 @@ export default function AdminBrandsPage() {
 
             {brandsQuery.error ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-destructive">
+                <TableCell colSpan={6} className="text-center text-destructive">
                   {brandsQuery.error instanceof Error ? brandsQuery.error.message : "No se pudieron cargar marcas"}
                 </TableCell>
               </TableRow>
@@ -194,6 +263,13 @@ export default function AdminBrandsPage() {
 
             {filteredRows.map((brand) => (
               <TableRow key={brand.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={bulkSelection.isSelected(brand.id)}
+                    onCheckedChange={(checked) => bulkSelection.setRowSelected(brand.id, Boolean(checked))}
+                    aria-label={`Seleccionar marca ${brand.name}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div>
                     <p className="font-medium">{brand.name}</p>
@@ -222,7 +298,7 @@ export default function AdminBrandsPage() {
 
             {!brandsQuery.isLoading && !brandsQuery.error && !filteredRows.length ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   No se encontraron marcas.
                 </TableCell>
               </TableRow>
@@ -299,6 +375,27 @@ export default function AdminBrandsPage() {
               }}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar marcas seleccionadas</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Se eliminaran ${bulkSelection.selectedCount} marcas. Esta accion no se puede deshacer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void bulkDeleteMutation.mutateAsync(bulkSelection.selectedRows);
+              }}
+            >
+              Eliminar seleccionadas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
+import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatCurrency, formatDate, formatNumber } from "@/admin/utils/format";
+import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteOffer,
   listMerchants,
@@ -16,6 +19,7 @@ import {
 import type { AdminOfferRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,6 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -90,7 +95,8 @@ export default function AdminOffersPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [search, setSearch] = useState("");
-  const [productLookup, setProductLookup] = useState("");
+  const [productFilterSearch, setProductFilterSearch] = useState("");
+  const [productFormSearch, setProductFormSearch] = useState("");
   const [productFilter, setProductFilter] = useState("all");
   const [merchantFilter, setMerchantFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -98,7 +104,9 @@ export default function AdminOffersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminOfferRecord | null>(null);
-  const debouncedProductLookup = useDebouncedValue(productLookup, 300);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const debouncedProductFilterSearch = useDebouncedValue(productFilterSearch, 300);
+  const debouncedProductFormSearch = useDebouncedValue(productFormSearch, 300);
 
   const offersQuery = useQuery({
     queryKey: ["admin-offers", { page, pageSize, search, productFilter, merchantFilter, statusFilter }],
@@ -113,9 +121,15 @@ export default function AdminOffersPage() {
       }),
   });
 
-  const productsForSelectQuery = useQuery({
-    queryKey: ["admin-products-select", debouncedProductLookup],
-    queryFn: () => listProductsForSelect(debouncedProductLookup, 25),
+  const productsForFilterQuery = useQuery({
+    queryKey: ["admin-products-select-filter", debouncedProductFilterSearch],
+    queryFn: () => listProductsForSelect(debouncedProductFilterSearch, 25),
+  });
+
+  const productsForFormQuery = useQuery({
+    queryKey: ["admin-products-select-form", debouncedProductFormSearch],
+    queryFn: () => listProductsForSelect(debouncedProductFormSearch, 25),
+    enabled: dialogOpen,
   });
 
   const merchantsQuery = useQuery({ queryKey: ["admin-merchants"], queryFn: listMerchants });
@@ -159,12 +173,71 @@ export default function AdminOffersPage() {
     },
   });
 
-  const rows = offersQuery.data?.rows || [];
+  const rows = useMemo(() => offersQuery.data?.rows || [], [offersQuery.data]);
+  const bulkSelection = useBulkSelection(rows);
   const total = offersQuery.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  const merchantOptions = useMemo(
+    () => (merchantsQuery.data || []).map((merchant) => ({ value: merchant.id, label: merchant.name })),
+    [merchantsQuery.data],
+  );
+
+  const productFilterOptions = useMemo(() => {
+    const options = (productsForFilterQuery.data || []).map((product) => ({ value: product.id, label: product.name }));
+
+    if (productFilter !== "all" && !options.some((option) => option.value === productFilter)) {
+      const selectedRow = rows.find((row) => row.productId === productFilter);
+      if (selectedRow) {
+        options.unshift({ value: selectedRow.productId, label: selectedRow.productName });
+      }
+    }
+
+    return [{ value: "all", label: "Todos los productos" }, ...options];
+  }, [productsForFilterQuery.data, productFilter, rows]);
+
+  const merchantFilterOptions = useMemo(() => {
+    const options = [...merchantOptions];
+
+    if (merchantFilter !== "all" && !options.some((option) => option.value === merchantFilter)) {
+      const selectedRow = rows.find((row) => row.merchantId === merchantFilter);
+      if (selectedRow) {
+        options.unshift({ value: selectedRow.merchantId, label: selectedRow.merchantName });
+      }
+    }
+
+    return [{ value: "all", label: "Todas las tiendas" }, ...options];
+  }, [merchantOptions, merchantFilter, rows]);
+
+  const productFormOptions = useMemo(() => {
+    const options = (productsForFormQuery.data || []).map((product) => ({ value: product.id, label: product.name }));
+
+    if (form.productId && !options.some((option) => option.value === form.productId)) {
+      const selectedRow = rows.find((row) => row.productId === form.productId);
+      if (selectedRow) {
+        options.unshift({ value: selectedRow.productId, label: selectedRow.productName });
+      }
+    }
+
+    return options;
+  }, [productsForFormQuery.data, form.productId, rows]);
+
+  const merchantFormOptions = useMemo(() => {
+    const options = [...merchantOptions];
+
+    if (form.merchantId && !options.some((option) => option.value === form.merchantId)) {
+      const selectedRow = rows.find((row) => row.merchantId === form.merchantId);
+      if (selectedRow) {
+        options.unshift({ value: selectedRow.merchantId, label: selectedRow.merchantName });
+      }
+    }
+
+    return options;
+  }, [merchantOptions, form.merchantId, rows]);
+
   const openCreate = () => {
     setForm(INITIAL_FORM);
+    setProductFormSearch("");
     setDialogOpen(true);
   };
 
@@ -180,6 +253,7 @@ export default function AdminOffersPage() {
       isActive: offer.isActive,
       isFeatured: offer.isFeatured,
     });
+    setProductFormSearch("");
     setDialogOpen(true);
   };
 
@@ -203,6 +277,56 @@ export default function AdminOffersPage() {
     });
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (selectedRows: AdminOfferRecord[]) => {
+      for (const row of selectedRows) {
+        await deleteOffer(row.id);
+      }
+      return selectedRows;
+    },
+    onSuccess: async (deletedRows) => {
+      for (const row of deletedRows) {
+        await logAdminAction({
+          action: "offer.delete",
+          entityType: "offer",
+          entityId: row.id,
+          payload: { productId: row.productId, merchantId: row.merchantId, bulk: true },
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
+      bulkSelection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`${deletedRows.length} ofertas eliminadas`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudieron eliminar las ofertas seleccionadas");
+    },
+  });
+
+  const onExportSelected = () => {
+    try {
+      exportRowsToExcel({
+        rows: bulkSelection.selectedRows,
+        columns: [
+          { header: "Producto", value: (row) => row.productName, width: 30 },
+          { header: "Tienda", value: (row) => row.merchantName, width: 24 },
+          { header: "Precio", value: (row) => row.price, width: 14 },
+          { header: "Precio anterior", value: (row) => row.oldPrice ?? "", width: 16 },
+          { header: "Descuento %", value: (row) => row.discountPercent ?? "", width: 14 },
+          { header: "Stock", value: (row) => (row.stock ? "Si" : "No"), width: 10 },
+          { header: "Activa", value: (row) => (row.isActive ? "Si" : "No"), width: 10 },
+          { header: "URL", value: (row) => row.url, width: 40 },
+          { header: "Actualizada", value: (row) => formatDate(row.updatedAt), width: 20 },
+        ],
+        fileName: `ofertas_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: "Ofertas",
+      });
+      toast.success("Excel exportado correctamente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo exportar el Excel");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -213,7 +337,7 @@ export default function AdminOffersPage() {
       />
 
       <div className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-6">
+        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
           <Input
             value={search}
             onChange={(event) => {
@@ -224,51 +348,33 @@ export default function AdminOffersPage() {
             className="lg:col-span-2"
           />
 
-          <Input
-            value={productLookup}
-            onChange={(event) => setProductLookup(event.target.value)}
-            placeholder="Buscar producto..."
-          />
-
-          <Select
+          <SearchableSelect
             value={productFilter}
             onValueChange={(value) => {
               setPage(1);
-              setProductFilter(value);
+              setProductFilter(value || "all");
             }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Producto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los productos</SelectItem>
-              {(productsForSelectQuery.data || []).map((product) => (
-                <SelectItem key={product.id} value={product.id}>
-                  {product.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={productFilterOptions}
+            placeholder="Producto"
+            searchPlaceholder="Buscar producto..."
+            emptyText="Sin productos"
+            searchValue={productFilterSearch}
+            onSearchValueChange={setProductFilterSearch}
+            loading={productsForFilterQuery.isFetching}
+          />
 
-          <Select
+          <SearchableSelect
             value={merchantFilter}
             onValueChange={(value) => {
               setPage(1);
-              setMerchantFilter(value);
+              setMerchantFilter(value || "all");
             }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Tienda" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las tiendas</SelectItem>
-              {(merchantsQuery.data || []).map((merchant) => (
-                <SelectItem key={merchant.id} value={merchant.id}>
-                  {merchant.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={merchantFilterOptions}
+            placeholder="Tienda"
+            searchPlaceholder="Buscar tienda..."
+            emptyText="Sin tiendas"
+            loading={merchantsQuery.isLoading}
+          />
 
           <Select
             value={statusFilter}
@@ -288,11 +394,28 @@ export default function AdminOffersPage() {
           </Select>
         </div>
 
-        {productsForSelectQuery.isFetching ? <p className="mb-3 text-xs text-muted-foreground">Buscando productos...</p> : null}
+        {productsForFilterQuery.isFetching ? <p className="mb-3 text-xs text-muted-foreground">Buscando productos...</p> : null}
+
+        {bulkSelection.selectedCount > 0 ? (
+          <BulkActionsBar
+            selectedCount={bulkSelection.selectedCount}
+            onExport={onExportSelected}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={bulkSelection.clearSelection}
+            isDeleting={bulkDeleteMutation.isPending}
+          />
+        ) : null}
 
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={bulkSelection.allSelected ? true : bulkSelection.someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => bulkSelection.setAllSelected(Boolean(checked))}
+                  aria-label="Seleccionar todas"
+                />
+              </TableHead>
               <TableHead>Producto</TableHead>
               <TableHead>Tienda</TableHead>
               <TableHead>Precio</TableHead>
@@ -306,7 +429,7 @@ export default function AdminOffersPage() {
           <TableBody>
             {offersQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   Cargando ofertas...
                 </TableCell>
               </TableRow>
@@ -314,7 +437,7 @@ export default function AdminOffersPage() {
 
             {offersQuery.error ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-destructive">
+                <TableCell colSpan={9} className="text-center text-destructive">
                   {offersQuery.error instanceof Error ? offersQuery.error.message : "No se pudieron cargar ofertas"}
                 </TableCell>
               </TableRow>
@@ -322,6 +445,13 @@ export default function AdminOffersPage() {
 
             {rows.map((offer) => (
               <TableRow key={offer.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={bulkSelection.isSelected(offer.id)}
+                    onCheckedChange={(checked) => bulkSelection.setRowSelected(offer.id, Boolean(checked))}
+                    aria-label={`Seleccionar oferta ${offer.productName}`}
+                  />
+                </TableCell>
                 <TableCell>{offer.productName}</TableCell>
                 <TableCell>{offer.merchantName}</TableCell>
                 <TableCell>
@@ -355,7 +485,7 @@ export default function AdminOffersPage() {
 
             {!offersQuery.isLoading && !offersQuery.error && !rows.length ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   No hay ofertas para los filtros seleccionados.
                 </TableCell>
               </TableRow>
@@ -396,42 +526,32 @@ export default function AdminOffersPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label>Producto</Label>
-              <Input
-                value={productLookup}
-                onChange={(event) => setProductLookup(event.target.value)}
-                placeholder="Buscar producto para seleccionar"
+              <SearchableSelect
+                value={form.productId || ""}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, productId: value }))}
+                options={productFormOptions}
+                placeholder="Selecciona producto"
+                searchPlaceholder="Buscar producto..."
+                emptyText="Sin productos"
+                searchValue={productFormSearch}
+                onSearchValueChange={setProductFormSearch}
+                loading={productsForFormQuery.isFetching}
+                portalled={false}
               />
-              <Select value={form.productId || ""} onValueChange={(value) => setForm((prev) => ({ ...prev, productId: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona producto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(productsForSelectQuery.data || []).map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      {product.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2 sm:col-span-2">
               <Label>Tienda</Label>
-              <Select
+              <SearchableSelect
                 value={form.merchantId || ""}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, merchantId: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona tienda" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(merchantsQuery.data || []).map((merchant) => (
-                    <SelectItem key={merchant.id} value={merchant.id}>
-                      {merchant.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={merchantFormOptions}
+                placeholder="Selecciona tienda"
+                searchPlaceholder="Buscar tienda..."
+                emptyText="Sin tiendas"
+                loading={merchantsQuery.isLoading}
+                portalled={false}
+              />
             </div>
 
             <div className="space-y-2">
@@ -528,6 +648,27 @@ export default function AdminOffersPage() {
               }}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar ofertas seleccionadas</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Se eliminaran ${bulkSelection.selectedCount} ofertas. Esta accion no se puede deshacer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void bulkDeleteMutation.mutateAsync(bulkSelection.selectedRows);
+              }}
+            >
+              Eliminar seleccionadas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -3,8 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
+import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatDate, formatNumber } from "@/admin/utils/format";
+import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteMerchant,
   listMerchants,
@@ -14,6 +17,7 @@ import {
 import type { AdminMerchantRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +75,7 @@ export default function AdminMerchantsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminMerchantRecord | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const merchantsQuery = useQuery({
     queryKey: ["admin-merchants"],
@@ -127,6 +132,7 @@ export default function AdminMerchantsPage() {
       return merchant.name.toLowerCase().includes(safeSearch) || (merchant.domain || "").toLowerCase().includes(safeSearch);
     });
   }, [merchantsQuery.data, search]);
+  const bulkSelection = useBulkSelection(filteredRows);
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
@@ -165,6 +171,54 @@ export default function AdminMerchantsPage() {
     });
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (selectedRows: AdminMerchantRecord[]) => {
+      for (const row of selectedRows) {
+        await deleteMerchant(row.id);
+      }
+      return selectedRows;
+    },
+    onSuccess: async (deletedRows) => {
+      for (const row of deletedRows) {
+        await logAdminAction({
+          action: "merchant.delete",
+          entityType: "merchant",
+          entityId: row.id,
+          payload: { name: row.name, bulk: true },
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-merchants"] });
+      bulkSelection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`${deletedRows.length} tiendas eliminadas`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudieron eliminar las tiendas seleccionadas");
+    },
+  });
+
+  const onExportSelected = () => {
+    try {
+      exportRowsToExcel({
+        rows: bulkSelection.selectedRows,
+        columns: [
+          { header: "Tienda", value: (row) => row.name, width: 28 },
+          { header: "Dominio", value: (row) => row.domain || "", width: 30 },
+          { header: "Pais", value: (row) => row.country || "", width: 10 },
+          { header: "Activa", value: (row) => (row.isActive ? "Si" : "No"), width: 10 },
+          { header: "Ofertas", value: (row) => row.offerCount ?? 0, width: 12 },
+          { header: "Clics", value: (row) => row.clicks ?? 0, width: 12 },
+          { header: "Actualizada", value: (row) => formatDate(row.updatedAt), width: 20 },
+        ],
+        fileName: `tiendas_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: "Tiendas",
+      });
+      toast.success("Excel exportado correctamente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo exportar el Excel");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -187,9 +241,26 @@ export default function AdminMerchantsPage() {
           </p>
         </div>
 
+        {bulkSelection.selectedCount > 0 ? (
+          <BulkActionsBar
+            selectedCount={bulkSelection.selectedCount}
+            onExport={onExportSelected}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={bulkSelection.clearSelection}
+            isDeleting={bulkDeleteMutation.isPending}
+          />
+        ) : null}
+
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={bulkSelection.allSelected ? true : bulkSelection.someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => bulkSelection.setAllSelected(Boolean(checked))}
+                  aria-label="Seleccionar todas"
+                />
+              </TableHead>
               <TableHead>Tienda</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Ofertas</TableHead>
@@ -201,7 +272,7 @@ export default function AdminMerchantsPage() {
           <TableBody>
             {merchantsQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Cargando tiendas...
                 </TableCell>
               </TableRow>
@@ -209,7 +280,7 @@ export default function AdminMerchantsPage() {
 
             {merchantsQuery.error ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-destructive">
+                <TableCell colSpan={7} className="text-center text-destructive">
                   {merchantsQuery.error instanceof Error ? merchantsQuery.error.message : "No se pudieron cargar tiendas"}
                 </TableCell>
               </TableRow>
@@ -217,6 +288,13 @@ export default function AdminMerchantsPage() {
 
             {filteredRows.map((merchant) => (
               <TableRow key={merchant.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={bulkSelection.isSelected(merchant.id)}
+                    onCheckedChange={(checked) => bulkSelection.setRowSelected(merchant.id, Boolean(checked))}
+                    aria-label={`Seleccionar tienda ${merchant.name}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div>
                     <p className="font-medium">{merchant.name}</p>
@@ -246,7 +324,7 @@ export default function AdminMerchantsPage() {
 
             {!merchantsQuery.isLoading && !merchantsQuery.error && !filteredRows.length ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   No se encontraron tiendas.
                 </TableCell>
               </TableRow>
@@ -352,6 +430,27 @@ export default function AdminMerchantsPage() {
               }}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar tiendas seleccionadas</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Se eliminaran ${bulkSelection.selectedCount} tiendas. Esta accion no se puede deshacer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void bulkDeleteMutation.mutateAsync(bulkSelection.selectedRows);
+              }}
+            >
+              Eliminar seleccionadas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

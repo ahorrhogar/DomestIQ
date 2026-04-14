@@ -3,8 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Copy, Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
+import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatCurrency, formatDate, formatNumber } from "@/admin/utils/format";
+import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   addProductImage,
   deleteProduct,
@@ -22,6 +25,7 @@ import {
 import type { AdminProductRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -130,6 +135,7 @@ export default function AdminProductsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminProductRecord | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
@@ -264,11 +270,24 @@ export default function AdminProductsPage() {
   });
 
   const rows = productsQuery.data?.rows || [];
+  const bulkSelection = useBulkSelection(rows);
   const total = productsQuery.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const categoryOptions = useMemo(() => categoriesQuery.data || [], [categoriesQuery.data]);
   const brandOptions = useMemo(() => brandsQuery.data || [], [brandsQuery.data]);
+  const categorySelectOptions = useMemo(
+    () =>
+      categoryOptions.map((category) => ({
+        value: category.id,
+        label: category.parentName ? `${category.parentName} / ${category.name}` : category.name,
+      })),
+    [categoryOptions],
+  );
+  const categoryFilterOptions = useMemo(
+    () => [{ value: "all", label: "Todas las categorias" }, ...categorySelectOptions],
+    [categorySelectOptions],
+  );
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
@@ -319,6 +338,55 @@ export default function AdminProductsPage() {
     });
   };
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (selectedRows: AdminProductRecord[]) => {
+      for (const row of selectedRows) {
+        await deleteProduct(row.id);
+      }
+      return selectedRows;
+    },
+    onSuccess: async (deletedRows) => {
+      for (const row of deletedRows) {
+        await logAdminAction({
+          action: "product.delete",
+          entityType: "product",
+          entityId: row.id,
+          payload: { name: row.name, bulk: true },
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      bulkSelection.clearSelection();
+      setBulkDeleteOpen(false);
+      toast.success(`${deletedRows.length} productos eliminados`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudieron eliminar los productos seleccionados");
+    },
+  });
+
+  const onExportSelected = () => {
+    try {
+      exportRowsToExcel({
+        rows: bulkSelection.selectedRows,
+        columns: [
+          { header: "Nombre", value: (row) => row.name, width: 32 },
+          { header: "Slug", value: (row) => row.slug, width: 28 },
+          { header: "Marca", value: (row) => row.brandName, width: 24 },
+          { header: "Categoria", value: (row) => row.categoryName, width: 24 },
+          { header: "Activo", value: (row) => (row.isActive ? "Si" : "No"), width: 12 },
+          { header: "Ofertas", value: (row) => row.offerCount, width: 12 },
+          { header: "Precio min", value: (row) => row.minPrice, width: 14 },
+          { header: "Actualizado", value: (row) => formatDate(row.updatedAt), width: 20 },
+        ],
+        fileName: `productos_${new Date().toISOString().slice(0, 10)}`,
+        sheetName: "Productos",
+      });
+      toast.success("Excel exportado correctamente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo exportar el Excel");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -360,25 +428,18 @@ export default function AdminProductsPage() {
             </SelectContent>
           </Select>
 
-          <Select
+          <SearchableSelect
             value={categoryFilter}
             onValueChange={(value) => {
               setPage(1);
-              setCategoryFilter(value);
+              setCategoryFilter(value || "all");
             }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Categoria" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las categorias</SelectItem>
-              {categoryOptions.map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.parentName ? `${category.parentName} / ${category.name}` : category.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={categoryFilterOptions}
+            placeholder="Categoria"
+            searchPlaceholder="Buscar categoria..."
+            emptyText="Sin categorias"
+            loading={categoriesQuery.isLoading}
+          />
 
           <Select
             value={statusFilter}
@@ -398,9 +459,26 @@ export default function AdminProductsPage() {
           </Select>
         </div>
 
+        {bulkSelection.selectedCount > 0 ? (
+          <BulkActionsBar
+            selectedCount={bulkSelection.selectedCount}
+            onExport={onExportSelected}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={bulkSelection.clearSelection}
+            isDeleting={bulkDeleteMutation.isPending}
+          />
+        ) : null}
+
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={bulkSelection.allSelected ? true : bulkSelection.someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => bulkSelection.setAllSelected(Boolean(checked))}
+                  aria-label="Seleccionar todos"
+                />
+              </TableHead>
               <TableHead>Producto</TableHead>
               <TableHead>Marca</TableHead>
               <TableHead>Categoria</TableHead>
@@ -414,6 +492,13 @@ export default function AdminProductsPage() {
           <TableBody>
             {rows.map((product) => (
               <TableRow key={product.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={bulkSelection.isSelected(product.id)}
+                    onCheckedChange={(checked) => bulkSelection.setRowSelected(product.id, Boolean(checked))}
+                    aria-label={`Seleccionar ${product.name}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div>
                     <p className="font-medium">{product.name}</p>
@@ -448,7 +533,7 @@ export default function AdminProductsPage() {
 
             {!rows.length ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   No hay productos para los filtros seleccionados.
                 </TableCell>
               </TableRow>
@@ -531,21 +616,17 @@ export default function AdminProductsPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="product-category">Categoria</Label>
-                <Select
+                <SearchableSelect
+                  id="product-category"
                   value={form.categoryId || ""}
                   onValueChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
-                >
-                  <SelectTrigger id="product-category">
-                    <SelectValue placeholder="Selecciona categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoryOptions.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.parentName ? `${category.parentName} / ${category.name}` : category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={categorySelectOptions}
+                  placeholder="Selecciona categoria"
+                  searchPlaceholder="Buscar categoria..."
+                  emptyText="Sin categorias"
+                  loading={categoriesQuery.isLoading}
+                  portalled={false}
+                />
               </div>
 
               <div className="space-y-2">
@@ -733,6 +814,27 @@ export default function AdminProductsPage() {
               }}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar productos seleccionados</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Se eliminaran ${bulkSelection.selectedCount} productos y sus ofertas asociadas. Esta accion no se puede deshacer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void bulkDeleteMutation.mutateAsync(bulkSelection.selectedRows);
+              }}
+            >
+              Eliminar seleccionados
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

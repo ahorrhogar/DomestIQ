@@ -7,6 +7,7 @@ import { ProductGrid } from '@/components/product/ProductCard';
 import TrustBlock from '@/components/home/TrustBlock';
 import SEOContent from '@/components/home/SEOContent';
 import { analyticsService, productService } from '@/services';
+import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react';
 import { useMemo, useEffect } from 'react';
@@ -45,29 +46,37 @@ const Index = () => {
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {trending.map(p => (
-                <Link key={p.id} to={`/producto/${p.slug}`} className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300">
-                  {p.discountPercent && p.discountPercent > 0 && (
-                    <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive/10 text-destructive">
-                      -{p.discountPercent}%
-                    </span>
-                  )}
-                  <div className="aspect-square rounded-lg overflow-hidden bg-secondary/50 mb-2">
-                    <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">{p.brand}</p>
-                  <h3 className="text-xs font-medium text-foreground line-clamp-2 leading-tight mt-0.5">{p.name}</h3>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star className="w-3 h-3 fill-accent text-accent" />
-                    <span className="text-xs font-medium">{p.rating}</span>
-                    <span className="text-[10px] text-muted-foreground">({p.reviewCount})</span>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-xs text-muted-foreground">desde </span>
-                    <span className="text-sm font-bold text-foreground">{p.minPrice.toFixed(2).replace('.', ',')} €</span>
-                  </div>
-                </Link>
-              ))}
+              {trending.map((p) => {
+                const realDiscount = computeDiscountPercent(p);
+                return (
+                  <Link key={p.id} to={`/producto/${p.slug}`} className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300">
+                    {realDiscount ? (
+                      <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-deal text-deal-foreground">
+                        -{realDiscount}%
+                      </span>
+                    ) : null}
+                    <div className="aspect-square rounded-lg overflow-hidden bg-secondary/50 mb-2">
+                      <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{p.brand}</p>
+                    <h3 className="text-xs font-medium text-foreground line-clamp-2 leading-tight mt-0.5">{p.name}</h3>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star className="w-3 h-3 fill-accent text-accent" />
+                      <span className="text-xs font-medium">{p.rating}</span>
+                      <span className="text-[10px] text-muted-foreground">({p.reviewCount})</span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="text-xs text-muted-foreground">desde </span>
+                      <span className="text-sm font-bold text-foreground">{p.minPrice.toFixed(2).replace('.', ',')} €</span>
+                    </div>
+                    {p.originalPrice && p.originalPrice > p.minPrice ? (
+                      <p className="text-xs text-muted-foreground line-through mt-0.5">
+                        {p.originalPrice.toFixed(2).replace('.', ',')} €
+                      </p>
+                    ) : null}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </section>
