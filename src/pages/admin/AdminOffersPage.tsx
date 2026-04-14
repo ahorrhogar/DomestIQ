@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Pencil, Trash2 } from "lucide-react";
+import { CheckCircle2, History, Pencil, PowerOff, RefreshCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
 import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
@@ -9,14 +9,25 @@ import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatCurrency, formatDate, formatNumber } from "@/admin/utils/format";
 import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
+  deactivateOffer,
   deleteOffer,
+  listCategories,
   listMerchants,
+  listOfferPriceHistory,
   listOffers,
   listProductsForSelect,
-  logAdminAction,
+  markOfferReviewed,
+  requestOfferSync,
+  saveOfferPriceChange,
   upsertOffer,
 } from "@/admin/services/adminCatalogService";
-import type { AdminOfferRecord } from "@/admin/types";
+import type {
+  AdminOfferPriceHistoryRecord,
+  AdminOfferRecord,
+  OfferSourceType,
+  OfferSyncStatus,
+  OfferUpdateMode,
+} from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,6 +65,8 @@ const schema = z.object({
   stock: z.boolean(),
   isActive: z.boolean(),
   isFeatured: z.boolean(),
+  sourceType: z.enum(["manual", "api", "feed", "future_auto"]),
+  updateMode: z.enum(["manual", "auto", "hybrid"]),
 });
 
 interface FormState {
@@ -66,6 +79,8 @@ interface FormState {
   stock: boolean;
   isActive: boolean;
   isFeatured: boolean;
+  sourceType: OfferSourceType;
+  updateMode: OfferUpdateMode;
 }
 
 const INITIAL_FORM: FormState = {
@@ -77,7 +92,39 @@ const INITIAL_FORM: FormState = {
   stock: true,
   isActive: true,
   isFeatured: false,
+  sourceType: "manual",
+  updateMode: "manual",
 };
+
+const SOURCE_LABELS: Record<OfferSourceType, string> = {
+  manual: "Manual",
+  api: "API",
+  feed: "Feed",
+  future_auto: "Auto",
+};
+
+const SYNC_LABELS: Record<OfferSyncStatus, string> = {
+  ok: "Fresca",
+  pending: "Pendiente",
+  stale: "Desactualizada",
+  error: "Error",
+};
+
+function syncBadgeVariant(status: OfferSyncStatus): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "error") {
+    return "destructive";
+  }
+
+  if (status === "stale") {
+    return "secondary";
+  }
+
+  if (status === "pending") {
+    return "outline";
+  }
+
+  return "default";
+}
 
 function useDebouncedValue<T>(value: T, delay = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -98,26 +145,40 @@ export default function AdminOffersPage() {
   const [productFilterSearch, setProductFilterSearch] = useState("");
   const [productFormSearch, setProductFormSearch] = useState("");
   const [productFilter, setProductFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [merchantFilter, setMerchantFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | OfferSourceType>("all");
+  const [syncFilter, setSyncFilter] = useState<"all" | OfferSyncStatus>("all");
+  const [reviewQueueFirst, setReviewQueueFirst] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminOfferRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [priceDialogOpen, setPriceDialogOpen] = useState(false);
+  const [priceDraft, setPriceDraft] = useState<{ offerId: string; price: number; oldPrice: number; stock: boolean } | null>(null);
+  const [historyOffer, setHistoryOffer] = useState<AdminOfferRecord | null>(null);
   const debouncedProductFilterSearch = useDebouncedValue(productFilterSearch, 300);
   const debouncedProductFormSearch = useDebouncedValue(productFormSearch, 300);
 
   const offersQuery = useQuery({
-    queryKey: ["admin-offers", { page, pageSize, search, productFilter, merchantFilter, statusFilter }],
+    queryKey: [
+      "admin-offers",
+      { page, pageSize, search, productFilter, categoryFilter, merchantFilter, statusFilter, sourceFilter, syncFilter, reviewQueueFirst },
+    ],
     queryFn: () =>
       listOffers({
         page,
         pageSize,
         search,
         productId: productFilter === "all" ? undefined : productFilter,
+        categoryId: categoryFilter === "all" ? undefined : categoryFilter,
         merchantId: merchantFilter === "all" ? undefined : merchantFilter,
+        sourceType: sourceFilter === "all" ? undefined : sourceFilter,
+        syncStatus: syncFilter === "all" ? undefined : syncFilter,
         isActive: statusFilter === "all" ? undefined : statusFilter === "active",
+        reviewQueueFirst,
       }),
   });
 
@@ -133,16 +194,17 @@ export default function AdminOffersPage() {
   });
 
   const merchantsQuery = useQuery({ queryKey: ["admin-merchants"], queryFn: listMerchants });
+  const categoriesQuery = useQuery({ queryKey: ["admin-categories"], queryFn: listCategories });
+
+  const offerHistoryQuery = useQuery({
+    queryKey: ["admin-offer-history", historyOffer?.id],
+    queryFn: () => listOfferPriceHistory(String(historyOffer?.id || ""), 150),
+    enabled: Boolean(historyOffer?.id),
+  });
 
   const saveMutation = useMutation({
     mutationFn: upsertOffer,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: form.id ? "offer.update" : "offer.create",
-        entityType: "offer",
-        entityId: data.id,
-        payload: { productId: data.productId, merchantId: data.merchantId },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
       toast.success(form.id ? "Oferta actualizada" : "Oferta creada");
       setDialogOpen(false);
@@ -156,20 +218,61 @@ export default function AdminOffersPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteOffer,
     onSuccess: async () => {
-      if (deleteTarget) {
-        await logAdminAction({
-          action: "offer.delete",
-          entityType: "offer",
-          entityId: deleteTarget.id,
-          payload: { productId: deleteTarget.productId, merchantId: deleteTarget.merchantId },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
       toast.success("Oferta eliminada");
       setDeleteTarget(null);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo eliminar la oferta");
+    },
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: markOfferReviewed,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
+      toast.success("Oferta marcada como revisada");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo marcar como revisada");
+    },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: deactivateOffer,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
+      toast.success("Oferta desactivada");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo desactivar la oferta");
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: requestOfferSync,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
+      toast.success("Oferta enviada a sincronizacion pendiente");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo encolar la sincronizacion");
+    },
+  });
+
+  const quickPriceMutation = useMutation({
+    mutationFn: saveOfferPriceChange,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
+      if (historyOffer?.id) {
+        await queryClient.invalidateQueries({ queryKey: ["admin-offer-history", historyOffer.id] });
+      }
+      toast.success("Cambio de precio guardado");
+      setPriceDialogOpen(false);
+      setPriceDraft(null);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar el cambio de precio");
     },
   });
 
@@ -208,6 +311,15 @@ export default function AdminOffersPage() {
 
     return [{ value: "all", label: "Todas las tiendas" }, ...options];
   }, [merchantOptions, merchantFilter, rows]);
+
+  const categoryFilterOptions = useMemo(() => {
+    const options = (categoriesQuery.data || []).map((category) => ({
+      value: category.id,
+      label: category.parentName ? `${category.parentName} / ${category.name}` : category.name,
+    }));
+
+    return [{ value: "all", label: "Todas las categorias" }, ...options];
+  }, [categoriesQuery.data]);
 
   const productFormOptions = useMemo(() => {
     const options = (productsForFormQuery.data || []).map((product) => ({ value: product.id, label: product.name }));
@@ -252,9 +364,25 @@ export default function AdminOffersPage() {
       stock: offer.stock,
       isActive: offer.isActive,
       isFeatured: offer.isFeatured,
+      sourceType: offer.sourceType,
+      updateMode: offer.updateMode,
     });
     setProductFormSearch("");
     setDialogOpen(true);
+  };
+
+  const openPriceDialog = (offer: AdminOfferRecord) => {
+    setPriceDraft({
+      offerId: offer.id,
+      price: offer.currentPrice,
+      oldPrice: offer.oldPrice || offer.currentPrice,
+      stock: offer.stock,
+    });
+    setPriceDialogOpen(true);
+  };
+
+  const openHistoryDialog = (offer: AdminOfferRecord) => {
+    setHistoryOffer(offer);
   };
 
   const onSave = async () => {
@@ -274,6 +402,21 @@ export default function AdminOffersPage() {
       stock: parsed.data.stock,
       isActive: parsed.data.isActive,
       isFeatured: parsed.data.isFeatured,
+      sourceType: parsed.data.sourceType,
+      updateMode: parsed.data.updateMode,
+    });
+  };
+
+  const onQuickPriceSave = async () => {
+    if (!priceDraft) {
+      return;
+    }
+
+    await quickPriceMutation.mutateAsync({
+      offerId: priceDraft.offerId,
+      price: priceDraft.price,
+      oldPrice: priceDraft.oldPrice,
+      stock: priceDraft.stock,
     });
   };
 
@@ -285,14 +428,6 @@ export default function AdminOffersPage() {
       return selectedRows;
     },
     onSuccess: async (deletedRows) => {
-      for (const row of deletedRows) {
-        await logAdminAction({
-          action: "offer.delete",
-          entityType: "offer",
-          entityId: row.id,
-          payload: { productId: row.productId, merchantId: row.merchantId, bulk: true },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-offers"] });
       bulkSelection.clearSelection();
       setBulkDeleteOpen(false);
@@ -315,6 +450,8 @@ export default function AdminOffersPage() {
           { header: "Descuento %", value: (row) => row.discountPercent ?? "", width: 14 },
           { header: "Stock", value: (row) => (row.stock ? "Si" : "No"), width: 10 },
           { header: "Activa", value: (row) => (row.isActive ? "Si" : "No"), width: 10 },
+          { header: "Fuente", value: (row) => SOURCE_LABELS[row.sourceType], width: 12 },
+          { header: "Sync", value: (row) => SYNC_LABELS[row.syncStatus], width: 14 },
           { header: "URL", value: (row) => row.url, width: 40 },
           { header: "Actualizada", value: (row) => formatDate(row.updatedAt), width: 20 },
         ],
@@ -337,7 +474,7 @@ export default function AdminOffersPage() {
       />
 
       <div className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
+        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-8">
           <Input
             value={search}
             onChange={(event) => {
@@ -361,6 +498,19 @@ export default function AdminOffersPage() {
             searchValue={productFilterSearch}
             onSearchValueChange={setProductFilterSearch}
             loading={productsForFilterQuery.isFetching}
+          />
+
+          <SearchableSelect
+            value={categoryFilter}
+            onValueChange={(value) => {
+              setPage(1);
+              setCategoryFilter(value || "all");
+            }}
+            options={categoryFilterOptions}
+            placeholder="Categoria"
+            searchPlaceholder="Buscar categoria..."
+            emptyText="Sin categorias"
+            loading={categoriesQuery.isLoading}
           />
 
           <SearchableSelect
@@ -392,6 +542,52 @@ export default function AdminOffersPage() {
               <SelectItem value="inactive">Inactivas</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select
+            value={sourceFilter}
+            onValueChange={(value: "all" | OfferSourceType) => {
+              setPage(1);
+              setSourceFilter(value);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Fuente" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las fuentes</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+              <SelectItem value="api">API</SelectItem>
+              <SelectItem value="feed">Feed</SelectItem>
+              <SelectItem value="future_auto">Auto</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={syncFilter}
+            onValueChange={(value: "all" | OfferSyncStatus) => {
+              setPage(1);
+              setSyncFilter(value);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Sync" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los estados</SelectItem>
+              <SelectItem value="ok">Fresca</SelectItem>
+              <SelectItem value="pending">Pendiente</SelectItem>
+              <SelectItem value="stale">Desactualizada</SelectItem>
+              <SelectItem value="error">Error</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 lg:col-span-1">
+            <div>
+              <p className="text-xs font-medium">Cola revision</p>
+              <p className="text-[11px] text-muted-foreground">Stale y prioridad</p>
+            </div>
+            <Switch checked={reviewQueueFirst} onCheckedChange={setReviewQueueFirst} />
+          </div>
         </div>
 
         {productsForFilterQuery.isFetching ? <p className="mb-3 text-xs text-muted-foreground">Buscando productos...</p> : null}
@@ -418,18 +614,20 @@ export default function AdminOffersPage() {
               </TableHead>
               <TableHead>Producto</TableHead>
               <TableHead>Tienda</TableHead>
+              <TableHead>Fuente</TableHead>
               <TableHead>Precio</TableHead>
               <TableHead>Descuento</TableHead>
               <TableHead>Stock</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Sync</TableHead>
               <TableHead>Actualizada</TableHead>
-              <TableHead className="w-[120px] text-right">Acciones</TableHead>
+              <TableHead className="w-[240px] text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {offersQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   Cargando ofertas...
                 </TableCell>
               </TableRow>
@@ -437,7 +635,7 @@ export default function AdminOffersPage() {
 
             {offersQuery.error ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-destructive">
+                <TableCell colSpan={11} className="text-center text-destructive">
                   {offersQuery.error instanceof Error ? offersQuery.error.message : "No se pudieron cargar ofertas"}
                 </TableCell>
               </TableRow>
@@ -455,8 +653,11 @@ export default function AdminOffersPage() {
                 <TableCell>{offer.productName}</TableCell>
                 <TableCell>{offer.merchantName}</TableCell>
                 <TableCell>
+                  <Badge variant="outline">{SOURCE_LABELS[offer.sourceType]}</Badge>
+                </TableCell>
+                <TableCell>
                   <div>
-                    <p className="font-medium">{formatCurrency(offer.price)}</p>
+                    <p className="font-medium">{formatCurrency(offer.currentPrice)}</p>
                     {offer.oldPrice ? (
                       <p className="text-xs text-muted-foreground line-through">{formatCurrency(offer.oldPrice)}</p>
                     ) : null}
@@ -469,9 +670,53 @@ export default function AdminOffersPage() {
                 <TableCell>
                   <Badge variant={offer.isActive ? "default" : "secondary"}>{offer.isActive ? "Activa" : "Inactiva"}</Badge>
                 </TableCell>
-                <TableCell>{formatDate(offer.updatedAt)}</TableCell>
+                <TableCell>
+                  <Badge variant={syncBadgeVariant(offer.syncStatus)}>{SYNC_LABELS[offer.syncStatus]}</Badge>
+                </TableCell>
+                <TableCell>
+                  <div>
+                    <p>{formatDate(offer.updatedAt)}</p>
+                    <p className="text-xs text-muted-foreground">Rev: {offer.lastCheckedAt ? formatDate(offer.lastCheckedAt) : "-"}</p>
+                  </div>
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        void reviewMutation.mutateAsync(offer.id);
+                      }}
+                      title="Marcar como revisada"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openPriceDialog(offer)} title="Guardar cambio de precio">
+                      <Save className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        void syncMutation.mutateAsync(offer.id);
+                      }}
+                      title="Actualizar precio"
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openHistoryDialog(offer)} title="Ver historial">
+                      <History className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        void deactivateMutation.mutateAsync(offer.id);
+                      }}
+                      title="Desactivar oferta"
+                    >
+                      <PowerOff className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(offer)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -485,7 +730,7 @@ export default function AdminOffersPage() {
 
             {!offersQuery.isLoading && !offersQuery.error && !rows.length ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No hay ofertas para los filtros seleccionados.
                 </TableCell>
               </TableRow>
@@ -552,6 +797,41 @@ export default function AdminOffersPage() {
                 loading={merchantsQuery.isLoading}
                 portalled={false}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Fuente</Label>
+              <Select
+                value={form.sourceType}
+                onValueChange={(value: OfferSourceType) => setForm((prev) => ({ ...prev, sourceType: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Fuente" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="api">API</SelectItem>
+                  <SelectItem value="feed">Feed</SelectItem>
+                  <SelectItem value="future_auto">Auto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Modo de actualizacion</Label>
+              <Select
+                value={form.updateMode}
+                onValueChange={(value: OfferUpdateMode) => setForm((prev) => ({ ...prev, updateMode: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="auto">Auto</SelectItem>
+                  <SelectItem value="hybrid">Hybrid</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -625,6 +905,170 @@ export default function AdminOffersPage() {
             </Button>
             <Button onClick={onSave} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={priceDialogOpen}
+        onOpenChange={(open) => {
+          setPriceDialogOpen(open);
+          if (!open) {
+            setPriceDraft(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Guardar cambio de precio</DialogTitle>
+            <DialogDescription>Actualiza precio y marca la oferta como revisada en una sola accion.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="quick-price">Precio actual</Label>
+              <Input
+                id="quick-price"
+                type="number"
+                min={0}
+                step="0.01"
+                value={String(priceDraft?.price ?? 0)}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setPriceDraft((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          price: Number.isFinite(next) ? Math.max(0, next) : 0,
+                        }
+                      : prev,
+                  );
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quick-old-price">Precio anterior</Label>
+              <Input
+                id="quick-old-price"
+                type="number"
+                min={0}
+                step="0.01"
+                value={String(priceDraft?.oldPrice ?? 0)}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setPriceDraft((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          oldPrice: Number.isFinite(next) ? Math.max(0, next) : 0,
+                        }
+                      : prev,
+                  );
+                }}
+              />
+            </div>
+
+            <div className="sm:col-span-2 flex items-center justify-between rounded-md border border-border px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Stock disponible</p>
+                <p className="text-xs text-muted-foreground">Marca disponibilidad durante la revision manual.</p>
+              </div>
+              <Switch
+                checked={Boolean(priceDraft?.stock)}
+                onCheckedChange={(checked) => {
+                  setPriceDraft((prev) => (prev ? { ...prev, stock: checked } : prev));
+                }}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={onQuickPriceSave} disabled={quickPriceMutation.isPending}>
+              {quickPriceMutation.isPending ? "Guardando..." : "Guardar cambio de precio"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(historyOffer)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHistoryOffer(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Historial de precio</DialogTitle>
+            <DialogDescription>
+              {historyOffer ? `Cambios registrados para ${historyOffer.productName} en ${historyOffer.merchantName}.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[360px] overflow-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Precio</TableHead>
+                  <TableHead>Anterior</TableHead>
+                  <TableHead>Fuente</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Motivo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {offerHistoryQuery.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      Cargando historial...
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+
+                {offerHistoryQuery.error ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-destructive">
+                      {offerHistoryQuery.error instanceof Error ? offerHistoryQuery.error.message : "No se pudo cargar historial"}
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+
+                {(offerHistoryQuery.data || []).map((entry: AdminOfferPriceHistoryRecord) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>{formatDate(entry.checkedAt || entry.createdAt)}</TableCell>
+                    <TableCell>{formatCurrency(entry.price)}</TableCell>
+                    <TableCell>{entry.oldPrice ? formatCurrency(entry.oldPrice) : "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{SOURCE_LABELS[entry.sourceType]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={syncBadgeVariant(entry.syncStatus)}>{SYNC_LABELS[entry.syncStatus]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{entry.changeReason || "-"}</TableCell>
+                  </TableRow>
+                ))}
+
+                {!offerHistoryQuery.isLoading && !offerHistoryQuery.error && !(offerHistoryQuery.data || []).length ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      Sin historial disponible.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryOffer(null)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -11,7 +11,7 @@ import type {
 } from "@/domain/catalog/types";
 import { logger } from "@/infrastructure/logging/logger";
 import { getSupabaseClient, type SupabaseClientLike } from "@/integrations/supabase/client";
-import type { ExtendedCatalogDataSource } from "@/data/sources/catalogSource.types";
+import type { CatalogRankingSignals, ExtendedCatalogDataSource } from "@/data/sources/catalogSource.types";
 
 interface BrandRow {
   id: string;
@@ -31,7 +31,22 @@ interface ProductRow {
   category_id: string;
   description: string;
   specs: unknown;
+  is_active?: boolean | null;
   created_at: string;
+}
+
+interface ProductSignalRow {
+  product_id: string;
+}
+
+interface HomeClickSignalRow {
+  product_id: string;
+  clicks: number | string;
+}
+
+interface HomeFavoriteSignalRow {
+  product_id: string;
+  favorites: number | string;
 }
 
 interface ProductImageRow {
@@ -55,6 +70,7 @@ interface OfferRow {
   old_price: number | string | null;
   url: string;
   stock: boolean;
+  is_active?: boolean | null;
   updated_at: string;
 }
 
@@ -70,6 +86,7 @@ interface OfferRedirectRow {
   product_id: string;
   merchant_id: string;
   url: string;
+  merchant_domain?: string | null;
 }
 
 interface CatalogSnapshot {
@@ -87,6 +104,19 @@ interface SnapshotCategoryLookup {
   subcategorySlugById: Map<string, string>;
   merchantNamesByProductId: Map<string, string>;
 }
+
+const emptyRankingSignals: CatalogRankingSignals = {
+  clicksByProductId: {},
+  outboundClicksByProductId: {},
+  viewsByProductId: {},
+  favoritesByProductId: {},
+  hasViewSignals: false,
+  hasFavoriteSignals: false,
+  updatedAt: new Date(0).toISOString(),
+};
+
+const SNAPSHOT_TTL_MS = 180000;
+const RANKING_SIGNALS_TTL_MS = 120000;
 
 const emptySnapshot: CatalogSnapshot = {
   products: [],
@@ -176,6 +206,11 @@ const merchantDefaultsByName: Record<
 let snapshot: CatalogSnapshot = emptySnapshot;
 let initialized = false;
 let initPromise: Promise<void> | null = null;
+let snapshotRefreshPromise: Promise<void> | null = null;
+let snapshotFetchedAt = 0;
+let rankingSignals: CatalogRankingSignals = emptyRankingSignals;
+let rankingRefreshPromise: Promise<void> | null = null;
+let rankingSignalsFetchedAt = 0;
 
 function slugify(value: string): string {
   return value
@@ -629,6 +664,10 @@ function buildProducts(
 
   return productRows
     .map((row) => {
+      if (row.is_active === false) {
+        return null;
+      }
+
       const categoryRow = categoriesById.get(row.category_id);
       if (!categoryRow) {
         return null;
@@ -638,7 +677,7 @@ function buildProducts(
       const categoryId = parentCategory?.id || categoryRow.id;
       const subcategoryId = categoryRow.id;
 
-      const offers = offersByProductId.get(row.id) || [];
+      const offers = (offersByProductId.get(row.id) || []).filter((offer) => offer.is_active !== false);
       const minPrice = offers.length > 0 ? Math.min(...offers.map((offer) => toNumber(offer.price))) : 0;
       const maxPrice = offers.length > 0 ? Math.max(...offers.map((offer) => toNumber(offer.price))) : minPrice;
       const originalPriceCandidate = offers.length > 0
@@ -648,6 +687,13 @@ function buildProducts(
 
       const specsRecord = parseSpecs(row.specs);
       const productSpecs = toSpecArray(specsRecord.attributes);
+      const rawAttributes = parseSpecs(specsRecord.attributes);
+      const editorialPriorityValue = toNumber(
+        (specsRecord.editorialPriority as number | string | null | undefined) ??
+          (rawAttributes.editorialPriority as number | string | null | undefined),
+        0,
+      );
+      const editorialPriority = Math.max(0, Math.min(100, Math.round(editorialPriorityValue)));
 
       const images = (imagesByProductId.get(row.id) || [])
         .sort((left, right) => Number(right.is_primary) - Number(left.is_primary))
@@ -675,8 +721,8 @@ function buildProducts(
         maxPrice,
         originalPrice,
         discountPercent,
-        rating: toNumber(specsRecord.rating, 4.2),
-        reviewCount: Math.max(0, Math.floor(toNumber(specsRecord.reviewCount, 100))),
+        rating: toNumber(specsRecord.rating, 0),
+        reviewCount: Math.max(0, Math.floor(toNumber(specsRecord.reviewCount, 0))),
         offerCount: offers.length,
         specs: productSpecs,
         tags: toStringArray(specsRecord.tags),
@@ -685,7 +731,9 @@ function buildProducts(
         style: typeof specsRecord.style === "string" ? specsRecord.style : undefined,
         dimensions: typeof specsRecord.dimensions === "string" ? specsRecord.dimensions : undefined,
         weight: typeof specsRecord.weight === "string" ? specsRecord.weight : undefined,
-        featured: toBoolean(specsRecord.featured),
+        featured: toBoolean(specsRecord.featured ?? rawAttributes.featured),
+        teamRecommended: toBoolean(specsRecord.teamRecommended ?? rawAttributes.teamRecommended),
+        editorialPriority,
         bestSeller: toBoolean(specsRecord.bestSeller),
         isNew: toBoolean(specsRecord.isNew),
       } satisfies Product;
@@ -730,6 +778,10 @@ function buildOffers(offerRows: OfferRow[], merchants: Merchant[]): Map<string, 
 
   const mappedOffers = offerRows
     .map((row) => {
+      if (row.is_active === false) {
+        return null;
+      }
+
       const merchant = merchantsById.get(row.merchant_id);
       if (!merchant) {
         return null;
@@ -785,6 +837,258 @@ function buildPriceHistoryMap(rows: PriceHistoryRow[]): Map<string, PriceHistory
   return historyByProductId;
 }
 
+function countByProductId(rows: ProductSignalRow[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const row of rows) {
+    const productId = String(row.product_id || "");
+    if (!productId) {
+      continue;
+    }
+
+    counts[productId] = (counts[productId] || 0) + 1;
+  }
+
+  return counts;
+}
+
+function countFromAggregateRows(
+  rows: Array<{ product_id: string; count: number | string }> | Array<{ product_id: string; clicks: number | string }> | Array<{ product_id: string; favorites: number | string }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const row of rows) {
+    const productId = String(row.product_id || "");
+    if (!productId) {
+      continue;
+    }
+
+    const value = "clicks" in row
+      ? toNumber(row.clicks, 0)
+      : "favorites" in row
+        ? toNumber(row.favorites, 0)
+        : toNumber((row as { count?: number | string }).count, 0);
+
+    if (value <= 0) {
+      continue;
+    }
+
+    counts[productId] = value;
+  }
+
+  return counts;
+}
+
+function isMissingRelationError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const code = String(error.code || "").toUpperCase();
+  if (code === "42P01" || code === "PGRST202" || code === "PGRST204" || code === "PGRST205") {
+    return true;
+  }
+
+  const message = String(error.message || "").toLowerCase();
+  return message.includes("does not exist") || message.includes("could not find") || message.includes("relation");
+}
+
+async function queryOptionalSignalRows(
+  tables: string[],
+  client: SupabaseClientLike,
+): Promise<{ counts: Record<string, number>; found: boolean }> {
+  for (const table of tables) {
+    const result = await client.from(table).select("product_id").limit(10000);
+
+    if (!result.error) {
+      return {
+        counts: countByProductId((result.data || []) as ProductSignalRow[]),
+        found: true,
+      };
+    }
+
+    if (isMissingRelationError(result.error)) {
+      continue;
+    }
+
+    logger.log({
+      level: "warn",
+      message: "Optional signal source query failed",
+      timestamp: new Date().toISOString(),
+      context: {
+        table,
+        error: result.error,
+      },
+    });
+  }
+
+  return { counts: {}, found: false };
+}
+
+async function fetchRankingSignals(client: SupabaseClientLike): Promise<CatalogRankingSignals> {
+  const [productViewsResult, favoriteResult, explicitViewsResult] = await Promise.all([
+    client.from("products").select("id,search_count"),
+    queryOptionalSignalRows(["product_favorites", "favorites", "user_favorites", "wishlists"], client),
+    queryOptionalSignalRows(["product_views", "views", "product_impressions"], client),
+  ]);
+
+  let clicksByProductId: Record<string, number> = {};
+  const clickSignalResult = await client.rpc("get_home_click_signals", {
+    p_days: 120,
+    p_limit: 10000,
+  });
+
+  if (!clickSignalResult.error) {
+    clicksByProductId = countFromAggregateRows((clickSignalResult.data || []) as HomeClickSignalRow[]);
+  } else {
+    const fallbackClicksResult = await client
+      .from("clicks")
+      .select("product_id")
+      .order("created_at", { ascending: false })
+      .limit(10000);
+
+    if (!fallbackClicksResult.error) {
+      clicksByProductId = countByProductId((fallbackClicksResult.data || []) as ProductSignalRow[]);
+    } else {
+      logger.log({
+        level: "warn",
+        message: "Clicks signals unavailable for home ranking",
+        timestamp: new Date().toISOString(),
+        context: {
+          rpcError: clickSignalResult.error,
+          fallbackError: fallbackClicksResult.error,
+        },
+      });
+    }
+  }
+
+  const outboundClicksByProductId = { ...clicksByProductId };
+
+  let viewsByProductId: Record<string, number> = {};
+  let hasViewSignals = explicitViewsResult.found;
+
+  if (explicitViewsResult.found) {
+    viewsByProductId = explicitViewsResult.counts;
+  } else {
+    if (productViewsResult.error && !isMissingRelationError(productViewsResult.error)) {
+      logger.log({
+        level: "warn",
+        message: "Products search_count query for view signals failed",
+        timestamp: new Date().toISOString(),
+        context: {
+          error: productViewsResult.error,
+        },
+      });
+    }
+
+    const fallbackViews: Record<string, number> = {};
+    for (const row of productViewsResult.data || []) {
+      const productId = String(row.id || "");
+      const count = toNumber((row as { search_count?: number | string | null }).search_count, 0);
+      if (!productId || count <= 0) {
+        continue;
+      }
+
+      fallbackViews[productId] = count;
+    }
+
+    viewsByProductId = fallbackViews;
+    hasViewSignals = Object.keys(fallbackViews).length > 0;
+  }
+
+  let favoritesByProductId = favoriteResult.counts;
+  let hasFavoriteSignals = favoriteResult.found;
+
+  const favoriteSignalResult = await client.rpc("get_home_favorite_signals", {
+    p_days: 365,
+    p_limit: 10000,
+  });
+
+  if (!favoriteSignalResult.error) {
+    favoritesByProductId = countFromAggregateRows((favoriteSignalResult.data || []) as HomeFavoriteSignalRow[]);
+    hasFavoriteSignals = true;
+  } else if (!isMissingRelationError(favoriteSignalResult.error)) {
+    logger.log({
+      level: "warn",
+      message: "Favorite signal RPC query failed",
+      timestamp: new Date().toISOString(),
+      context: {
+        error: favoriteSignalResult.error,
+      },
+    });
+  }
+
+  return {
+    clicksByProductId,
+    outboundClicksByProductId,
+    viewsByProductId,
+    favoritesByProductId,
+    hasViewSignals,
+    hasFavoriteSignals,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function refreshSnapshot(client?: SupabaseClientLike): Promise<void> {
+  const supabase = client || getSupabaseClient();
+  snapshot = await buildSnapshot(supabase);
+  snapshotFetchedAt = Date.now();
+}
+
+function refreshSnapshotIfStale(): void {
+  if (!initialized) {
+    return;
+  }
+
+  const now = Date.now();
+  if (snapshotRefreshPromise || now - snapshotFetchedAt < SNAPSHOT_TTL_MS) {
+    return;
+  }
+
+  snapshotRefreshPromise = refreshSnapshot()
+    .catch((error) => {
+      logger.log({
+        level: "warn",
+        message: "Catalog snapshot refresh failed",
+        timestamp: new Date().toISOString(),
+        context: { error },
+      });
+    })
+    .finally(() => {
+      snapshotRefreshPromise = null;
+    });
+}
+
+async function refreshRankingSignals(client?: SupabaseClientLike): Promise<void> {
+  const supabase = client || getSupabaseClient();
+  rankingSignals = await fetchRankingSignals(supabase);
+  rankingSignalsFetchedAt = Date.now();
+}
+
+function refreshRankingSignalsIfStale(): void {
+  if (!initialized) {
+    return;
+  }
+
+  const now = Date.now();
+  if (rankingRefreshPromise || now - rankingSignalsFetchedAt < RANKING_SIGNALS_TTL_MS) {
+    return;
+  }
+
+  rankingRefreshPromise = refreshRankingSignals()
+    .catch((error) => {
+      logger.log({
+        level: "warn",
+        message: "Ranking signal refresh failed",
+        timestamp: new Date().toISOString(),
+        context: { error },
+      });
+    })
+    .finally(() => {
+      rankingRefreshPromise = null;
+    });
+}
+
 async function queryTable<T>(
   table: string,
   columns: string,
@@ -803,10 +1107,10 @@ async function buildSnapshot(client: SupabaseClientLike): Promise<CatalogSnapsho
   const [brandRows, categoryRows, productRows, imageRows, merchantRows, offerRows, priceHistoryRows] = await Promise.all([
     queryTable<BrandRow>("brands", "id,name", client),
     queryTable<CategoryRow>("categories", "id,name,parent_id", client),
-    queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,created_at", client),
+    queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,is_active,created_at", client),
     queryTable<ProductImageRow>("product_images", "id,product_id,url,is_primary", client),
     queryTable<MerchantRow>("merchants", "id,name,logo_url", client),
-    queryTable<OfferRow>("offers", "id,product_id,merchant_id,price,old_price,url,stock,updated_at", client),
+    queryTable<OfferRow>("offers", "id,product_id,merchant_id,price,old_price,url,stock,is_active,updated_at", client),
     queryTable<PriceHistoryRow>("price_history", "id,product_id,price,created_at", client),
   ]);
 
@@ -838,7 +1142,10 @@ async function ensureInitialized(): Promise<void> {
   initPromise = (async () => {
     try {
       const client = getSupabaseClient();
-      snapshot = await buildSnapshot(client);
+      await Promise.all([
+        refreshSnapshot(client),
+        refreshRankingSignals(client),
+      ]);
       initialized = true;
       logger.log({
         level: "info",
@@ -848,6 +1155,7 @@ async function ensureInitialized(): Promise<void> {
           products: snapshot.products.length,
           categories: snapshot.categories.length,
           merchants: snapshot.merchants.length,
+          rankingSignalsUpdatedAt: rankingSignals.updatedAt,
         },
       });
     } catch (error) {
@@ -873,7 +1181,17 @@ function currentSnapshot(): CatalogSnapshot {
     void ensureInitialized();
   }
 
+  refreshSnapshotIfStale();
   return snapshot;
+}
+
+function currentRankingSignals(): CatalogRankingSignals {
+  if (!initialized && !initPromise) {
+    void ensureInitialized();
+  }
+
+  refreshRankingSignalsIfStale();
+  return rankingSignals;
 }
 
 export async function initializeCatalogSource(): Promise<void> {
@@ -902,7 +1220,23 @@ export async function trackClick(
         error,
       },
     });
+    return;
   }
+
+  const currentClicks = rankingSignals.clicksByProductId[productId] || 0;
+  rankingSignals = {
+    ...rankingSignals,
+    clicksByProductId: {
+      ...rankingSignals.clicksByProductId,
+      [productId]: currentClicks + 1,
+    },
+    outboundClicksByProductId: {
+      ...rankingSignals.outboundClicksByProductId,
+      [productId]: (rankingSignals.outboundClicksByProductId[productId] || 0) + 1,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+  rankingSignalsFetchedAt = Date.now();
 }
 
 export async function getOfferRedirectPayload(
@@ -912,7 +1246,7 @@ export async function getOfferRedirectPayload(
   const supabase = client || getSupabaseClient();
   const { data, error } = await supabase
     .from("offers")
-    .select("id,product_id,merchant_id,url")
+    .select("id,product_id,merchant_id,url,merchants(domain)")
     .eq("id", offerId)
     .maybeSingle();
 
@@ -929,7 +1263,22 @@ export async function getOfferRedirectPayload(
     return null;
   }
 
-  return (data || null) as OfferRedirectRow | null;
+  if (!data) {
+    return null;
+  }
+
+  const merchantData =
+    data.merchants && typeof data.merchants === "object" && !Array.isArray(data.merchants)
+      ? (data.merchants as { domain?: unknown })
+      : null;
+
+  return {
+    id: String(data.id),
+    product_id: String(data.product_id),
+    merchant_id: String(data.merchant_id),
+    url: String(data.url || ""),
+    merchant_domain: merchantData?.domain ? String(merchantData.domain) : null,
+  };
 }
 
 export async function searchProducts(
@@ -1025,6 +1374,7 @@ export interface SupabaseCatalogSource extends ExtendedCatalogDataSource {
   getOffersByProduct(productId: string): Offer[];
   trackClick(productId: string, merchantId: string): Promise<void>;
   getOfferRedirectPayload(offerId: string): Promise<OfferRedirectRow | null>;
+  getRankingSignals(): CatalogRankingSignals;
 }
 
 export const supabaseCatalogSource: SupabaseCatalogSource = {
@@ -1047,4 +1397,5 @@ export const supabaseCatalogSource: SupabaseCatalogSource = {
     buildPriceAnalysis(currentSnapshot().priceHistoryByProductId.get(productId) || []),
   trackClick: (productId: string, merchantId: string) => trackClick(productId, merchantId),
   getOfferRedirectPayload: (offerId: string) => getOfferRedirectPayload(offerId),
+  getRankingSignals: () => currentRankingSignals(),
 };

@@ -7,6 +7,16 @@ import type {
   Product,
 } from "@/domain/catalog/types";
 
+export interface CatalogRankingSignals {
+  clicksByProductId: Record<string, number>;
+  outboundClicksByProductId: Record<string, number>;
+  viewsByProductId: Record<string, number>;
+  favoritesByProductId: Record<string, number>;
+  hasViewSignals: boolean;
+  hasFavoriteSignals: boolean;
+  updatedAt: string;
+}
+
 export interface CatalogDataSource {
   getProducts(): Product[];
   getCategories(): Category[];
@@ -28,4 +38,5 @@ export interface ExtendedCatalogDataSource extends CatalogDataSource {
   getOfferRedirectPayload?(
     offerId: string,
   ): Promise<{ id: string; product_id: string; merchant_id: string; url: string } | null>;
+  getRankingSignals?(): CatalogRankingSignals;
 }

@@ -19,6 +19,9 @@ export interface AdminProductRecord {
   tags: string[];
   attributes: Record<string, unknown>;
   isActive: boolean;
+  featured: boolean;
+  teamRecommended: boolean;
+  editorialPriority: number;
   sku?: string;
   ean?: string;
   createdAt: string;
@@ -32,8 +35,14 @@ export interface AdminOfferRecord {
   id: string;
   productId: string;
   productName: string;
+  categoryId?: string;
+  categoryName?: string;
   merchantId: string;
   merchantName: string;
+  sourceType: OfferSourceType;
+  updateMode: OfferUpdateMode;
+  syncStatus: OfferSyncStatus;
+  currentPrice: number;
   price: number;
   oldPrice?: number;
   discountPercent?: number;
@@ -41,7 +50,33 @@ export interface AdminOfferRecord {
   stock: boolean;
   isActive: boolean;
   isFeatured: boolean;
+  lastCheckedAt?: string;
+  lastUpdatedBy?: string;
+  lastSyncError?: string;
+  nextCheckAt?: string;
+  priorityScore?: number;
+  freshnessScore?: number;
   updatedAt: string;
+}
+
+export type OfferSourceType = "manual" | "api" | "feed" | "future_auto";
+export type OfferUpdateMode = "manual" | "auto" | "hybrid";
+export type OfferSyncStatus = "ok" | "stale" | "error" | "pending";
+
+export interface AdminOfferPriceHistoryRecord {
+  id: string;
+  offerId: string;
+  productId: string;
+  merchantId: string;
+  price: number;
+  oldPrice?: number;
+  sourceType: OfferSourceType;
+  updateMode: OfferUpdateMode;
+  syncStatus: OfferSyncStatus;
+  changedBy?: string;
+  changeReason?: string;
+  checkedAt: string;
+  createdAt: string;
 }
 
 export interface AdminBrandRecord {
@@ -148,10 +183,47 @@ export interface DashboardMetrics {
   activeOffers: number;
   activeMerchants: number;
   totalClicks: number;
+  clicksLast30Days: number;
   topClickedProducts: Array<{ productId: string; productName: string; clicks: number }>;
   topClickedMerchants: Array<{ merchantId: string; merchantName: string; clicks: number }>;
+  topOfferPairs: Array<{
+    productId: string;
+    productName: string;
+    merchantId: string;
+    merchantName: string;
+    clicks: number;
+  }>;
   topSearchTerms: Array<{ term: string; count: number }>;
+  noResultSearchTerms: Array<{ term: string; count: number }>;
   topViewedProducts: Array<{ productId: string; productName: string; views: number }>;
+  topSearchedProducts: Array<{ productId: string; productName: string; searchCount: number }>;
+  topCategoriesByClicks: Array<{ categoryId: string; categoryName: string; clicks: number }>;
+  topCategoriesByPerformance: Array<{
+    categoryId: string;
+    categoryName: string;
+    clicks: number;
+    views: number;
+    ctr: number;
+  }>;
+  searchesWithoutResults: number;
+  failedImportJobs: number;
+  productsWithoutActiveOffers: number;
+  staleActiveOffers: number;
+  highClicksLowViews: Array<{ productId: string; productName: string; clicks: number; views: number }>;
+  highViewsLowClicks: Array<{ productId: string; productName: string; clicks: number; views: number }>;
+  underFeaturedTopPerformers: Array<{ productId: string; productName: string; clicks: number; views: number }>;
+  featuredTopPerformers: Array<{ productId: string; productName: string; clicks: number; views: number }>;
+  favoritesTotal: number | null;
+  recentAdminActions: AdminActionRecord[];
+  freshness: {
+    lastClickAt?: string;
+    lastSearchAt?: string;
+    lastImportAt?: string;
+    lastSyncAt?: string;
+    stale: boolean;
+    staleSources: number;
+  };
+  dailyClicks: Array<{ day: string; clicks: number }>;
   incompleteProducts: number;
   syncStatus: SyncStatusRecord[];
 }

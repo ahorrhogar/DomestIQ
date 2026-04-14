@@ -8,7 +8,7 @@ import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatDate } from "@/admin/utils/format";
 import { exportRowsToExcel } from "@/admin/utils/excel";
-import { deleteBrand, listBrands, logAdminAction, upsertBrand } from "@/admin/services/adminCatalogService";
+import { deleteBrand, listBrands, upsertBrand } from "@/admin/services/adminCatalogService";
 import type { AdminBrandRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,13 +70,7 @@ export default function AdminBrandsPage() {
 
   const saveMutation = useMutation({
     mutationFn: upsertBrand,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: form.id ? "brand.update" : "brand.create",
-        entityType: "brand",
-        entityId: data.id,
-        payload: { name: data.name },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
       toast.success(form.id ? "Marca actualizada" : "Marca creada");
       setDialogOpen(false);
@@ -90,14 +84,6 @@ export default function AdminBrandsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteBrand,
     onSuccess: async () => {
-      if (deleteTarget) {
-        await logAdminAction({
-          action: "brand.delete",
-          entityType: "brand",
-          entityId: deleteTarget.id,
-          payload: { name: deleteTarget.name },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
       toast.success("Marca eliminada");
       setDeleteTarget(null);
@@ -157,14 +143,6 @@ export default function AdminBrandsPage() {
       return selectedRows;
     },
     onSuccess: async (deletedRows) => {
-      for (const row of deletedRows) {
-        await logAdminAction({
-          action: "brand.delete",
-          entityType: "brand",
-          entityId: row.id,
-          payload: { name: row.name, bulk: true },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
       bulkSelection.clearSelection();
       setBulkDeleteOpen(false);

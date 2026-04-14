@@ -127,13 +127,14 @@ export default function AdminAuditPage() {
                 <TableHead>Entidad</TableHead>
                 <TableHead>ID entidad</TableHead>
                 <TableHead>Usuario</TableHead>
+                <TableHead>Origen</TableHead>
                 <TableHead>Payload</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {auditQuery.isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Cargando eventos de auditoria...
                   </TableCell>
                 </TableRow>
@@ -141,7 +142,7 @@ export default function AdminAuditPage() {
 
               {auditQuery.error ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-destructive">
+                  <TableCell colSpan={7} className="text-center text-destructive">
                     {auditQuery.error instanceof Error ? auditQuery.error.message : "No se pudo cargar la auditoria"}
                   </TableCell>
                 </TableRow>
@@ -156,6 +157,7 @@ export default function AdminAuditPage() {
                   <TableCell>{row.entityType}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{row.entityId || "-"}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{row.userId}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{String(row.payload.source || "-")}</TableCell>
                   <TableCell>
                     <pre className="max-h-24 max-w-[420px] overflow-auto whitespace-pre-wrap rounded bg-secondary/50 p-2 text-xs">
                       {JSON.stringify(row.payload, null, 2)}
@@ -166,7 +168,7 @@ export default function AdminAuditPage() {
 
               {!auditQuery.isLoading && !auditQuery.error && !filteredRows.length ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     No hay eventos para los filtros actuales.
                   </TableCell>
                 </TableRow>

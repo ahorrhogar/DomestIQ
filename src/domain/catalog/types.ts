@@ -44,6 +44,8 @@ export interface Product {
   featured?: boolean;
   bestSeller?: boolean;
   isNew?: boolean;
+  teamRecommended?: boolean;
+  editorialPriority?: number;
 }
 
 export interface ProductSpec {

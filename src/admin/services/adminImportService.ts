@@ -1,6 +1,7 @@
 import Papa from "papaparse";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { sanitizeText } from "@/infrastructure/security/sanitize";
+import { parseAffiliateUrl } from "@/infrastructure/security/affiliateUrl";
 import type { ImportColumnMapping } from "@/admin/types";
 import {
   addImportJobLog,
@@ -185,6 +186,43 @@ function readField(row: Record<string, string>, key: string): string {
   return sanitizeText(row[key] || "", 2000);
 }
 
+function readRawField(row: Record<string, string>, key: string, maxLength = 2000): string {
+  return String(row[key] || "").trim().slice(0, maxLength);
+}
+
+function containsControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeHttpUrl(value: string): string {
+  const candidate = String(value || "").trim();
+  if (!candidate || containsControlCharacters(candidate)) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+
+    if (parsed.username || parsed.password) {
+      return "";
+    }
+
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
 function buildImportPayload(rows: Array<Record<string, string>>, mapping: ImportColumnMapping): ImportPayloadRow[] {
   return rows.map((row) => {
     const oldPriceRaw = parseNumber(readField(row, mapping.oldPrice));
@@ -197,8 +235,8 @@ function buildImportPayload(rows: Array<Record<string, string>>, mapping: Import
       description: readField(row, mapping.description),
       long_description: readField(row, mapping.longDescription),
       merchant_name: readField(row, mapping.merchantName),
-      offer_url: readField(row, mapping.offerUrl),
-      image_url: readField(row, mapping.imageUrl),
+      offer_url: normalizeHttpUrl(readRawField(row, mapping.offerUrl)),
+      image_url: normalizeHttpUrl(readRawField(row, mapping.imageUrl)),
       price: parseNumber(readField(row, mapping.price)),
       old_price: oldPriceRaw > 0 ? oldPriceRaw : null,
       stock: parseBoolean(readField(row, mapping.stock)),
@@ -207,6 +245,29 @@ function buildImportPayload(rows: Array<Record<string, string>>, mapping: Import
       tags: parseTags(readField(row, mapping.tags)),
     };
   });
+}
+
+function validateImportPayloadRows(rows: ImportPayloadRow[]): RowImportError[] {
+  const errors: RowImportError[] = [];
+
+  rows.forEach((row, index) => {
+    if (!row.offer_url) {
+      errors.push({
+        rowIndex: index,
+        message: "Fila invalida: offer_url es obligatorio y debe ser una URL http/https valida",
+      });
+      return;
+    }
+
+    if (!parseAffiliateUrl(row.offer_url)) {
+      errors.push({
+        rowIndex: index,
+        message: "Fila invalida: offer_url debe ser HTTPS publico y sin credenciales incrustadas",
+      });
+    }
+  });
+
+  return errors;
 }
 
 function parseImportRowErrors(value: string | null | undefined): RowImportError[] {
@@ -279,8 +340,25 @@ export async function runCsvImport(params: {
     metadata: { mapping: params.mapping, batchSize: IMPORT_BATCH_SIZE },
   });
 
+  await logAdminAction({
+    action: "import.csv.started",
+    entityType: "catalog",
+    entityId: job.id,
+    source: "adminImportService",
+    payload: {
+      rowCount: rows.length,
+      batchSize: IMPORT_BATCH_SIZE,
+    },
+  });
+
   try {
     const payloadRows = buildImportPayload(rows, params.mapping);
+    const preValidationErrors = validateImportPayloadRows(payloadRows);
+
+    if (preValidationErrors.length) {
+      await persistImportRowErrors(job.id, preValidationErrors.slice(0, 200));
+      throw new Error(`Importacion bloqueada por seguridad. Filas con URL invalida: ${preValidationErrors.length}`);
+    }
 
     const { data, error } = await supabase.rpc("import_products_batch", {
       p_job_id: job.id,
@@ -326,6 +404,7 @@ export async function runCsvImport(params: {
       action: "import.csv",
       entityType: "catalog",
       entityId: job.id,
+      source: "adminImportService",
       payload: {
         rowCount: processedRows,
         createdCount,
@@ -382,6 +461,19 @@ export async function runCsvImport(params: {
             : error.message
           : "Importacion fallida",
       payload: rowErrors.length ? { rowErrors: rowErrors.length } : {},
+    });
+
+    await logAdminAction({
+      action: "import.csv.failed",
+      entityType: "catalog",
+      entityId: job.id,
+      source: "adminImportService",
+      payload: {
+        rowCount: rows.length,
+        errorCount: safeErrorCount,
+        batchSize: IMPORT_BATCH_SIZE,
+        reason: error instanceof Error ? error.message : "Importacion fallida",
+      },
     });
 
     if (rowErrors.length) {

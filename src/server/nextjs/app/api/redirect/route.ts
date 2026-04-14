@@ -1,27 +1,9 @@
 import { getOfferRedirectPayload, trackClick } from "@/data/sources/supabaseCatalogSource";
+import { isAffiliateUrlAllowed } from "@/infrastructure/security/affiliateUrl";
 import { logger } from "@/infrastructure/logging/logger";
 import { getServerSupabaseClient } from "@/server/nextjs/lib/supabaseServerClient";
 
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isSafeAffiliateUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-
-    if (parsed.protocol !== "https:") {
-      return false;
-    }
-
-    if (["localhost", "127.0.0.1"].includes(parsed.hostname)) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
@@ -39,7 +21,17 @@ export async function GET(request: Request): Promise<Response> {
       return Response.json({ error: "Offer not found" }, { status: 404 });
     }
 
-    if (!isSafeAffiliateUrl(offer.url)) {
+    if (!isAffiliateUrlAllowed(offer.url, offer.merchant_domain || undefined)) {
+      logger.log({
+        level: "warn",
+        message: "Redirect blocked due to unsafe affiliate URL",
+        timestamp: new Date().toISOString(),
+        context: {
+          offerId,
+          merchantId: offer.merchant_id,
+          merchantDomain: offer.merchant_domain || null,
+        },
+      });
       return Response.json({ error: "Unsafe redirect URL" }, { status: 400 });
     }
 

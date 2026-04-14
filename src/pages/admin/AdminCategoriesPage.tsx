@@ -11,7 +11,6 @@ import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteCategory,
   listCategories,
-  logAdminAction,
   upsertCategory,
 } from "@/admin/services/adminCatalogService";
 import type { AdminCategoryRecord } from "@/admin/types";
@@ -88,13 +87,7 @@ export default function AdminCategoriesPage() {
 
   const saveMutation = useMutation({
     mutationFn: upsertCategory,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: form.id ? "category.update" : "category.create",
-        entityType: "category",
-        entityId: data.id,
-        payload: { name: data.name, parentId: data.parentId },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       toast.success(form.id ? "Categoria actualizada" : "Categoria creada");
       setDialogOpen(false);
@@ -108,14 +101,6 @@ export default function AdminCategoriesPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteCategory,
     onSuccess: async () => {
-      if (deleteTarget) {
-        await logAdminAction({
-          action: "category.delete",
-          entityType: "category",
-          entityId: deleteTarget.id,
-          payload: { name: deleteTarget.name },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       toast.success("Categoria eliminada");
       setDeleteTarget(null);
@@ -194,14 +179,6 @@ export default function AdminCategoriesPage() {
       return selectedRows;
     },
     onSuccess: async (deletedRows) => {
-      for (const row of deletedRows) {
-        await logAdminAction({
-          action: "category.delete",
-          entityType: "category",
-          entityId: row.id,
-          payload: { name: row.name, bulk: true },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       bulkSelection.clearSelection();
       setBulkDeleteOpen(false);

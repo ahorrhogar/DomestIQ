@@ -11,7 +11,6 @@ import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteMerchant,
   listMerchants,
-  logAdminAction,
   upsertMerchant,
 } from "@/admin/services/adminCatalogService";
 import type { AdminMerchantRecord } from "@/admin/types";
@@ -84,13 +83,7 @@ export default function AdminMerchantsPage() {
 
   const saveMutation = useMutation({
     mutationFn: upsertMerchant,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: form.id ? "merchant.update" : "merchant.create",
-        entityType: "merchant",
-        entityId: data.id,
-        payload: { name: data.name },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-merchants"] });
       toast.success(form.id ? "Tienda actualizada" : "Tienda creada");
       setDialogOpen(false);
@@ -104,14 +97,6 @@ export default function AdminMerchantsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteMerchant,
     onSuccess: async () => {
-      if (deleteTarget) {
-        await logAdminAction({
-          action: "merchant.delete",
-          entityType: "merchant",
-          entityId: deleteTarget.id,
-          payload: { name: deleteTarget.name },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-merchants"] });
       toast.success("Tienda eliminada");
       setDeleteTarget(null);
@@ -179,14 +164,6 @@ export default function AdminMerchantsPage() {
       return selectedRows;
     },
     onSuccess: async (deletedRows) => {
-      for (const row of deletedRows) {
-        await logAdminAction({
-          action: "merchant.delete",
-          entityType: "merchant",
-          entityId: row.id,
-          payload: { name: row.name, bulk: true },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-merchants"] });
       bulkSelection.clearSelection();
       setBulkDeleteOpen(false);

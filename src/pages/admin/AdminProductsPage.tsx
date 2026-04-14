@@ -17,7 +17,6 @@ import {
   listCategories,
   listProductImages,
   listProducts,
-  logAdminAction,
   setPrimaryProductImage,
   upsertProduct,
   uploadProductImage,
@@ -64,6 +63,9 @@ const schema = z.object({
   sku: z.string().optional(),
   ean: z.string().optional(),
   isActive: z.boolean(),
+  featured: z.boolean(),
+  teamRecommended: z.boolean(),
+  editorialPriority: z.number().int().min(0).max(100),
 });
 
 interface FormState {
@@ -79,6 +81,9 @@ interface FormState {
   sku: string;
   ean: string;
   isActive: boolean;
+  featured: boolean;
+  teamRecommended: boolean;
+  editorialPriority: number;
 }
 
 const INITIAL_FORM: FormState = {
@@ -93,6 +98,9 @@ const INITIAL_FORM: FormState = {
   sku: "",
   ean: "",
   isActive: true,
+  featured: false,
+  teamRecommended: false,
+  editorialPriority: 0,
 };
 
 function buildSlug(value: string): string {
@@ -163,13 +171,7 @@ export default function AdminProductsPage() {
 
   const saveMutation = useMutation({
     mutationFn: upsertProduct,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: form.id ? "product.update" : "product.create",
-        entityType: "product",
-        entityId: data.id,
-        payload: { name: data.name },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success(form.id ? "Producto actualizado" : "Producto creado");
       setDialogOpen(false);
@@ -184,13 +186,7 @@ export default function AdminProductsPage() {
 
   const duplicateMutation = useMutation({
     mutationFn: duplicateProduct,
-    onSuccess: async (data) => {
-      await logAdminAction({
-        action: "product.duplicate",
-        entityType: "product",
-        entityId: data.id,
-        payload: { from: "manual" },
-      });
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Producto duplicado");
     },
@@ -202,14 +198,6 @@ export default function AdminProductsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteProduct,
     onSuccess: async () => {
-      if (deleteTarget) {
-        await logAdminAction({
-          action: "product.delete",
-          entityType: "product",
-          entityId: deleteTarget.id,
-          payload: { name: deleteTarget.name },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Producto eliminado");
       setDeleteTarget(null);
@@ -308,6 +296,9 @@ export default function AdminProductsPage() {
       sku: product.sku || "",
       ean: product.ean || "",
       isActive: product.isActive,
+      featured: product.featured,
+      teamRecommended: product.teamRecommended,
+      editorialPriority: product.editorialPriority,
     });
     setDialogOpen(true);
   };
@@ -333,6 +324,9 @@ export default function AdminProductsPage() {
         .filter(Boolean),
       technicalSpecs: parseSpecsText(parsed.data.technicalSpecsText || ""),
       isActive: parsed.data.isActive,
+      featured: parsed.data.featured,
+      teamRecommended: parsed.data.teamRecommended,
+      editorialPriority: parsed.data.editorialPriority,
       sku: parsed.data.sku || undefined,
       ean: parsed.data.ean || undefined,
     });
@@ -346,14 +340,6 @@ export default function AdminProductsPage() {
       return selectedRows;
     },
     onSuccess: async (deletedRows) => {
-      for (const row of deletedRows) {
-        await logAdminAction({
-          action: "product.delete",
-          entityType: "product",
-          entityId: row.id,
-          payload: { name: row.name, bulk: true },
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       bulkSelection.clearSelection();
       setBulkDeleteOpen(false);
@@ -503,6 +489,11 @@ export default function AdminProductsPage() {
                   <div>
                     <p className="font-medium">{product.name}</p>
                     <p className="text-xs text-muted-foreground">{product.slug}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {product.featured ? <Badge variant="outline">Destacado</Badge> : null}
+                      {product.teamRecommended ? <Badge variant="outline">Equipo</Badge> : null}
+                      {product.editorialPriority > 0 ? <Badge variant="outline">Prioridad {product.editorialPriority}</Badge> : null}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>{product.brandName}</TableCell>
@@ -695,6 +686,46 @@ export default function AdminProductsPage() {
                 <Switch
                   checked={form.isActive}
                   onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isActive: checked }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Destacado en home</p>
+                  <p className="text-xs text-muted-foreground">Permite override manual para bloques editoriales.</p>
+                </div>
+                <Switch
+                  checked={form.featured}
+                  onCheckedChange={(checked) => setForm((prev) => ({ ...prev, featured: checked }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Recomendado por el equipo</p>
+                  <p className="text-xs text-muted-foreground">Prioriza el producto cuando faltan senales reales.</p>
+                </div>
+                <Switch
+                  checked={form.teamRecommended}
+                  onCheckedChange={(checked) => setForm((prev) => ({ ...prev, teamRecommended: checked }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-editorial-priority">Prioridad editorial (0-100)</Label>
+                <Input
+                  id="product-editorial-priority"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={String(form.editorialPriority)}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setForm((prev) => ({
+                      ...prev,
+                      editorialPriority: Number.isFinite(next) ? Math.max(0, Math.min(100, Math.round(next))) : 0,
+                    }));
+                  }}
                 />
               </div>
             </div>

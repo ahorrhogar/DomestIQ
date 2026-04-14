@@ -1,5 +1,11 @@
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { sanitizeNumber, sanitizeText } from "@/infrastructure/security/sanitize";
+import {
+  extractDomainFromAffiliateUrl,
+  isAffiliateUrlAllowed,
+  normalizeDomain,
+  parseAffiliateUrl,
+} from "@/infrastructure/security/affiliateUrl";
 import type {
   AdminActionRecord,
   AdminBrandRecord,
@@ -10,11 +16,22 @@ import type {
   AdminListQuery,
   AdminMerchantRecord,
   AdminOfferRecord,
+  AdminOfferPriceHistoryRecord,
   AdminProductImageRecord,
   AdminProductRecord,
   DashboardMetrics,
+  OfferSourceType,
+  OfferSyncStatus,
+  OfferUpdateMode,
   SyncStatusRecord,
 } from "@/admin/types";
+import {
+  mark_offer_fresh,
+  mark_offer_stale,
+  sync_offers_batch,
+  sync_price_for_offer,
+  update_price_history_on_change,
+} from "@/admin/services/offerSyncService";
 
 export interface ProductListFilters extends AdminListQuery {
   brandId?: string;
@@ -24,8 +41,12 @@ export interface ProductListFilters extends AdminListQuery {
 
 export interface OfferListFilters extends AdminListQuery {
   productId?: string;
+  categoryId?: string;
   merchantId?: string;
+  sourceType?: OfferSourceType;
+  syncStatus?: OfferSyncStatus;
   isActive?: boolean;
+  reviewQueueFirst?: boolean;
 }
 
 export interface ProductMutationInput {
@@ -40,6 +61,9 @@ export interface ProductMutationInput {
   tags?: string[];
   attributes?: Record<string, unknown>;
   isActive: boolean;
+  featured?: boolean;
+  teamRecommended?: boolean;
+  editorialPriority?: number;
   sku?: string;
   ean?: string;
 }
@@ -54,6 +78,13 @@ export interface OfferMutationInput {
   stock: boolean;
   isActive: boolean;
   isFeatured: boolean;
+  sourceType?: OfferSourceType;
+  updateMode?: OfferUpdateMode;
+  syncStatus?: OfferSyncStatus;
+  nextCheckAt?: string;
+  lastSyncError?: string;
+  priorityScore?: number;
+  freshnessScore?: number;
 }
 
 export interface BrandMutationInput {
@@ -99,6 +130,61 @@ interface RateLimitRpcResult {
   blockedUntil?: string;
 }
 
+interface DashboardAnalyticsSnapshot {
+  clicksLast30Days?: number;
+  topClickedProducts?: Array<{ productId?: string; productName?: string; clicks?: number }>;
+  topClickedMerchants?: Array<{ merchantId?: string; merchantName?: string; clicks?: number }>;
+  topOfferPairs?: Array<{
+    productId?: string;
+    productName?: string;
+    merchantId?: string;
+    merchantName?: string;
+    clicks?: number;
+  }>;
+  topViewedProducts?: Array<{ productId?: string; productName?: string; views?: number }>;
+  topSearchedProducts?: Array<{ productId?: string; productName?: string; searchCount?: number }>;
+  topCategoriesByClicks?: Array<{ categoryId?: string; categoryName?: string; clicks?: number }>;
+  topCategoriesByPerformance?: Array<{
+    categoryId?: string;
+    categoryName?: string;
+    clicks?: number;
+    views?: number;
+    ctr?: number;
+  }>;
+  noResultSearchTerms?: Array<{ term?: string; count?: number }>;
+  searchesWithoutResults?: number;
+  failedImportJobs?: number;
+  productsWithoutActiveOffers?: number;
+  staleActiveOffers?: number;
+  highClicksLowViews?: Array<{ productId?: string; productName?: string; clicks?: number; views?: number }>;
+  highViewsLowClicks?: Array<{ productId?: string; productName?: string; clicks?: number; views?: number }>;
+  underFeaturedTopPerformers?: Array<{
+    productId?: string;
+    productName?: string;
+    clicks?: number;
+    views?: number;
+  }>;
+  featuredTopPerformers?: Array<{ productId?: string; productName?: string; clicks?: number; views?: number }>;
+  favoritesTotal?: number | null;
+  recentAdminActions?: Array<{
+    id?: string;
+    userId?: string;
+    action?: string;
+    entityType?: string;
+    entityId?: string;
+    createdAt?: string;
+  }>;
+  freshness?: {
+    lastClickAt?: string | null;
+    lastSearchAt?: string | null;
+    lastImportAt?: string | null;
+    lastSyncAt?: string | null;
+    stale?: boolean;
+    staleSources?: number;
+  };
+  dailyClicks?: Array<{ day?: string; clicks?: number }>;
+}
+
 const ADMIN_RATE_LIMIT_POLICIES = {
   productWrite: { scope: "admin:product:write", maxRequests: 60, windowSeconds: 60, blockSeconds: 180 },
   productDelete: { scope: "admin:product:delete", maxRequests: 20, windowSeconds: 60, blockSeconds: 300 },
@@ -108,7 +194,31 @@ const ADMIN_RATE_LIMIT_POLICIES = {
   csvImport: { scope: "admin:import:csv", maxRequests: 6, windowSeconds: 60, blockSeconds: 600 },
 } as const;
 
+const OFFER_SOURCE_VALUES: OfferSourceType[] = ["manual", "api", "feed", "future_auto"];
+const OFFER_UPDATE_MODE_VALUES: OfferUpdateMode[] = ["manual", "auto", "hybrid"];
+const OFFER_SYNC_STATUS_VALUES: OfferSyncStatus[] = ["ok", "stale", "error", "pending"];
+const OFFER_CHECK_DEFAULT_HOURS = 24;
+
 export type AdminRateLimitScope = keyof typeof ADMIN_RATE_LIMIT_POLICIES;
+
+function sanitizeOfferSourceType(value: unknown, fallback: OfferSourceType = "manual"): OfferSourceType {
+  const safe = sanitizeText(String(value || ""), 32).toLowerCase() as OfferSourceType;
+  return OFFER_SOURCE_VALUES.includes(safe) ? safe : fallback;
+}
+
+function sanitizeOfferUpdateMode(value: unknown, fallback: OfferUpdateMode = "manual"): OfferUpdateMode {
+  const safe = sanitizeText(String(value || ""), 32).toLowerCase() as OfferUpdateMode;
+  return OFFER_UPDATE_MODE_VALUES.includes(safe) ? safe : fallback;
+}
+
+function sanitizeOfferSyncStatus(value: unknown, fallback: OfferSyncStatus = "ok"): OfferSyncStatus {
+  const safe = sanitizeText(String(value || ""), 32).toLowerCase() as OfferSyncStatus;
+  return OFFER_SYNC_STATUS_VALUES.includes(safe) ? safe : fallback;
+}
+
+function defaultNextOfferCheckAt(hours = OFFER_CHECK_DEFAULT_HOURS): string {
+  return new Date(Date.now() + Math.max(1, hours) * 3_600_000).toISOString();
+}
 
 function normalizeSlug(value: string): string {
   return sanitizeText(value.toLowerCase(), 120)
@@ -118,15 +228,34 @@ function normalizeSlug(value: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function containsControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function sanitizeHttpUrl(value: string, maxLength = 400): string {
-  const safeValue = sanitizeText(value, maxLength);
+  const safeValue = String(value || "").trim().slice(0, maxLength);
   if (!safeValue) {
+    return "";
+  }
+
+  if (containsControlCharacters(safeValue)) {
     return "";
   }
 
   try {
     const parsed = new URL(safeValue);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+
+    if (parsed.username || parsed.password) {
       return "";
     }
 
@@ -137,22 +266,30 @@ function sanitizeHttpUrl(value: string, maxLength = 400): string {
 }
 
 function sanitizeDomainValue(value: string): string {
-  const safeValue = sanitizeText(value.toLowerCase(), 200);
-  if (!safeValue) {
+  const normalized = normalizeDomain(value);
+  if (!normalized) {
     return "";
   }
 
-  const withoutProtocol = safeValue
-    .replace(/^https?:\/\//, "")
-    .replace(/\/$/, "")
-    .trim();
-
-  const domainPattern = /^[a-z0-9.-]+$/;
-  if (!domainPattern.test(withoutProtocol) || !withoutProtocol.includes(".")) {
+  const parsed = parseAffiliateUrl(`https://${normalized}`);
+  if (!parsed) {
     return "";
   }
 
-  return withoutProtocol;
+  return normalizeDomain(parsed.hostname);
+}
+
+function sanitizeAffiliateOfferUrl(value: string, merchantDomain?: string | null): string {
+  const parsed = parseAffiliateUrl(value);
+  if (!parsed) {
+    return "";
+  }
+
+  if (!isAffiliateUrlAllowed(parsed.toString(), merchantDomain)) {
+    return "";
+  }
+
+  return parsed.toString();
 }
 
 function parseSpecsObject(value: unknown): Record<string, unknown> {
@@ -260,6 +397,116 @@ export function mapAdminErrorMessage(error: SupabaseLikeError | null | undefined
   return error.message || fallback;
 }
 
+function sanitizeAuditPayload(payload: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+
+  const safePayload: Record<string, unknown> = {};
+  const maxKeys = 24;
+  let count = 0;
+
+  for (const [rawKey, rawValue] of Object.entries(payload)) {
+    if (count >= maxKeys) {
+      safePayload._truncated = true;
+      break;
+    }
+
+    const key = sanitizeText(rawKey, 64);
+    if (!key) {
+      continue;
+    }
+
+    if (typeof rawValue === "string") {
+      safePayload[key] = sanitizeText(rawValue, 300);
+      count += 1;
+      continue;
+    }
+
+    if (typeof rawValue === "number") {
+      if (Number.isFinite(rawValue)) {
+        safePayload[key] = sanitizeNumber(rawValue, -1_000_000_000, 1_000_000_000);
+      }
+      count += 1;
+      continue;
+    }
+
+    if (typeof rawValue === "boolean" || rawValue === null) {
+      safePayload[key] = rawValue;
+      count += 1;
+      continue;
+    }
+
+    if (rawValue instanceof Date) {
+      safePayload[key] = rawValue.toISOString();
+      count += 1;
+      continue;
+    }
+
+    if (Array.isArray(rawValue)) {
+      safePayload[key] = sanitizeText(rawValue.slice(0, 10).map((item) => String(item)).join(","), 300);
+      count += 1;
+      continue;
+    }
+
+    if (rawValue && typeof rawValue === "object") {
+      safePayload[key] = sanitizeText(JSON.stringify(rawValue), 300);
+      count += 1;
+    }
+  }
+
+  return safePayload;
+}
+
+function toAuditErrorPayload(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      errorName: sanitizeText(error.name || "Error", 80),
+      errorMessage: sanitizeText(error.message || "Error", 300),
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const input = error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+    return {
+      errorMessage: sanitizeText(String(input.message || "Error desconocido"), 300),
+      errorCode: sanitizeText(String(input.code || ""), 80),
+      errorDetails: sanitizeText(String(input.details || ""), 200),
+      errorHint: sanitizeText(String(input.hint || ""), 200),
+    };
+  }
+
+  return {
+    errorMessage: sanitizeText(String(error || "Error desconocido"), 300),
+  };
+}
+
+async function safeLogAdminAction(input: {
+  action: string;
+  entityType: string;
+  entityId?: string;
+  payload?: Record<string, unknown>;
+  source?: string;
+}): Promise<void> {
+  try {
+    const supabase = getSupabaseClient();
+    const source = sanitizeText(input.source || "adminCatalogService", 80);
+    const payload = sanitizeAuditPayload({
+      ...(input.payload || {}),
+      source,
+    });
+
+    await supabase.from("admin_actions").insert({
+      action: sanitizeText(input.action, 80),
+      entity_type: sanitizeText(input.entityType, 80),
+      entity_id: input.entityId || null,
+      payload,
+    });
+  } catch {
+    // Do not block business operations if audit insertion fails.
+  }
+}
+
 async function enforceAdminRateLimit(scope: AdminRateLimitScope): Promise<void> {
   const supabase = getSupabaseClient();
   const policy = ADMIN_RATE_LIMIT_POLICIES[scope];
@@ -272,6 +519,15 @@ async function enforceAdminRateLimit(scope: AdminRateLimitScope): Promise<void> 
   });
 
   if (error) {
+    await safeLogAdminAction({
+      action: "security.rate_limit.error",
+      entityType: "security",
+      payload: {
+        scope,
+        policyScope: policy.scope,
+        ...toAuditErrorPayload(error),
+      },
+    });
     throw new Error(mapAdminErrorMessage(error, "No se pudo validar limites de seguridad para la operacion"));
   }
 
@@ -284,6 +540,19 @@ async function enforceAdminRateLimit(scope: AdminRateLimitScope): Promise<void> 
   const message = resetText
     ? `Operacion bloqueada temporalmente por rate limiting. Intenta de nuevo despues de ${resetText}.`
     : "Operacion bloqueada temporalmente por rate limiting. Intenta de nuevo en unos minutos.";
+
+  await safeLogAdminAction({
+    action: "security.rate_limit.blocked",
+    entityType: "security",
+    payload: {
+      scope,
+      policyScope: policy.scope,
+      reason: rateResult.reason || "rate_limited",
+      remaining: typeof rateResult.remaining === "number" ? rateResult.remaining : null,
+      resetAt: rateResult.resetAt || null,
+      blockedUntil: rateResult.blockedUntil || null,
+    },
+  });
 
   throw new Error(message);
 }
@@ -327,6 +596,12 @@ function mapProductRow(
   const specs = parseSpecsObject(row.specs);
   const tags = parseTags(row.tags);
   const attributes = parseAttributes(row.attributes);
+  const featured = asBoolean(specs.featured ?? attributes.featured);
+  const teamRecommended = asBoolean(specs.teamRecommended ?? attributes.teamRecommended);
+  const editorialPriorityRaw = Number(specs.editorialPriority ?? attributes.editorialPriority ?? 0);
+  const editorialPriority = Number.isFinite(editorialPriorityRaw)
+    ? sanitizeNumber(Math.round(editorialPriorityRaw), 0, 100)
+    : 0;
   const categoryId = String(row.category_id || "");
   const categoryData = categoryMap.get(categoryId);
   const offerStats = offerStatsMap.get(String(row.id)) || { offerCount: 0, minPrice: 0 };
@@ -346,6 +621,9 @@ function mapProductRow(
     tags,
     attributes,
     isActive: Boolean(row.is_active),
+    featured,
+    teamRecommended,
+    editorialPriority,
     sku: row.sku ? String(row.sku) : undefined,
     ean: row.ean ? String(row.ean) : undefined,
     createdAt: String(row.created_at || new Date().toISOString()),
@@ -391,40 +669,97 @@ export async function upsertBrand(input: BrandMutationInput): Promise<AdminBrand
   const name = sanitizeText(input.name, 120);
   const safeLogoUrl = input.logoUrl ? sanitizeHttpUrl(input.logoUrl, 300) : "";
 
-  if (!name) {
-    throw new Error("La marca requiere nombre");
+  try {
+    if (!name) {
+      await safeLogAdminAction({
+        action: "brand.validation_failed",
+        entityType: "brand",
+        entityId: input.id,
+        payload: { reason: "name_required" },
+      });
+      throw new Error("La marca requiere nombre");
+    }
+
+    if (input.logoUrl && !safeLogoUrl) {
+      await safeLogAdminAction({
+        action: "brand.validation_failed",
+        entityType: "brand",
+        entityId: input.id,
+        payload: { reason: "invalid_logo_url" },
+      });
+      throw new Error("La marca requiere una URL de logo valida (http/https)");
+    }
+
+    const payload = {
+      name,
+      logo_url: safeLogoUrl || null,
+      is_active: Boolean(input.isActive),
+    };
+
+    const isUpdate = Boolean(input.id);
+    const query = isUpdate
+      ? supabase.from("brands").update(payload).eq("id", input.id).select("id,name,logo_url,is_active,updated_at").single()
+      : supabase.from("brands").insert(payload).select("id,name,logo_url,is_active,updated_at").single();
+
+    const { data, error } = await query;
+    throwIfError(error, "No se pudo guardar la marca");
+
+    const result = {
+      id: String(data.id),
+      name: String(data.name),
+      logoUrl: data.logo_url ? String(data.logo_url) : undefined,
+      isActive: Boolean(data.is_active),
+      updatedAt: String(data.updated_at || new Date().toISOString()),
+    };
+
+    await safeLogAdminAction({
+      action: isUpdate ? "brand.update" : "brand.create",
+      entityType: "brand",
+      entityId: result.id,
+      payload: {
+        name: result.name,
+        isActive: result.isActive,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "brand.error",
+      entityType: "brand",
+      entityId: input.id,
+      payload: {
+        operation: input.id ? "update" : "create",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  if (input.logoUrl && !safeLogoUrl) {
-    throw new Error("La marca requiere una URL de logo valida (http/https)");
-  }
-
-  const payload = {
-    name,
-    logo_url: safeLogoUrl || null,
-    is_active: Boolean(input.isActive),
-  };
-
-  const query = input.id
-    ? supabase.from("brands").update(payload).eq("id", input.id).select("id,name,logo_url,is_active,updated_at").single()
-    : supabase.from("brands").insert(payload).select("id,name,logo_url,is_active,updated_at").single();
-
-  const { data, error } = await query;
-  throwIfError(error, "No se pudo guardar la marca");
-
-  return {
-    id: String(data.id),
-    name: String(data.name),
-    logoUrl: data.logo_url ? String(data.logo_url) : undefined,
-    isActive: Boolean(data.is_active),
-    updatedAt: String(data.updated_at || new Date().toISOString()),
-  };
 }
 
 export async function deleteBrand(id: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("brands").delete().eq("id", id);
-  throwIfError(error, "No se pudo eliminar la marca");
+  try {
+    const { error } = await supabase.from("brands").delete().eq("id", id);
+    throwIfError(error, "No se pudo eliminar la marca");
+
+    await safeLogAdminAction({
+      action: "brand.delete",
+      entityType: "brand",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "brand.error",
+      entityType: "brand",
+      entityId: id,
+      payload: {
+        operation: "delete",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function listMerchants(): Promise<AdminMerchantRecord[]> {
@@ -475,59 +810,123 @@ export async function upsertMerchant(input: MerchantMutationInput): Promise<Admi
   const safeLogoUrl = input.logoUrl ? sanitizeHttpUrl(input.logoUrl, 300) : "";
   const safeDomain = input.domain ? sanitizeDomainValue(input.domain) : "";
 
-  if (!name) {
-    throw new Error("La tienda requiere nombre");
+  try {
+    if (!name) {
+      await safeLogAdminAction({
+        action: "merchant.validation_failed",
+        entityType: "merchant",
+        entityId: input.id,
+        payload: { reason: "name_required" },
+      });
+      throw new Error("La tienda requiere nombre");
+    }
+
+    if (input.logoUrl && !safeLogoUrl) {
+      await safeLogAdminAction({
+        action: "merchant.validation_failed",
+        entityType: "merchant",
+        entityId: input.id,
+        payload: { reason: "invalid_logo_url" },
+      });
+      throw new Error("La tienda requiere una URL de logo valida (http/https)");
+    }
+
+    if (input.domain && !safeDomain) {
+      await safeLogAdminAction({
+        action: "merchant.validation_failed",
+        entityType: "merchant",
+        entityId: input.id,
+        payload: { reason: "invalid_domain" },
+      });
+      throw new Error("La tienda requiere un dominio valido (ejemplo.com)");
+    }
+
+    const payload = {
+      name,
+      logo_url: safeLogoUrl || null,
+      domain: safeDomain || null,
+      country: sanitizeText(input.country || "ES", 8),
+      is_active: Boolean(input.isActive),
+      brand_color: input.brandColor ? sanitizeText(input.brandColor, 30) : null,
+    };
+
+    const isUpdate = Boolean(input.id);
+    const query = isUpdate
+      ? supabase
+          .from("merchants")
+          .update(payload)
+          .eq("id", input.id)
+          .select("id,name,logo_url,domain,country,is_active,brand_color,updated_at")
+          .single()
+      : supabase
+          .from("merchants")
+          .insert(payload)
+          .select("id,name,logo_url,domain,country,is_active,brand_color,updated_at")
+          .single();
+
+    const { data, error } = await query;
+    throwIfError(error, "No se pudo guardar la tienda");
+
+    const result = {
+      id: String(data.id),
+      name: String(data.name),
+      logoUrl: data.logo_url ? String(data.logo_url) : undefined,
+      domain: data.domain ? String(data.domain) : undefined,
+      country: data.country ? String(data.country) : "ES",
+      isActive: Boolean(data.is_active),
+      brandColor: data.brand_color ? String(data.brand_color) : undefined,
+      updatedAt: String(data.updated_at || new Date().toISOString()),
+    };
+
+    await safeLogAdminAction({
+      action: isUpdate ? "merchant.update" : "merchant.create",
+      entityType: "merchant",
+      entityId: result.id,
+      payload: {
+        name: result.name,
+        domain: result.domain || null,
+        isActive: result.isActive,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "merchant.error",
+      entityType: "merchant",
+      entityId: input.id,
+      payload: {
+        operation: input.id ? "update" : "create",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  if (input.logoUrl && !safeLogoUrl) {
-    throw new Error("La tienda requiere una URL de logo valida (http/https)");
-  }
-
-  if (input.domain && !safeDomain) {
-    throw new Error("La tienda requiere un dominio valido (ejemplo.com)");
-  }
-
-  const payload = {
-    name,
-    logo_url: safeLogoUrl || null,
-    domain: safeDomain || null,
-    country: sanitizeText(input.country || "ES", 8),
-    is_active: Boolean(input.isActive),
-    brand_color: input.brandColor ? sanitizeText(input.brandColor, 30) : null,
-  };
-
-  const query = input.id
-    ? supabase
-        .from("merchants")
-        .update(payload)
-        .eq("id", input.id)
-        .select("id,name,logo_url,domain,country,is_active,brand_color,updated_at")
-        .single()
-    : supabase
-        .from("merchants")
-        .insert(payload)
-        .select("id,name,logo_url,domain,country,is_active,brand_color,updated_at")
-        .single();
-
-  const { data, error } = await query;
-  throwIfError(error, "No se pudo guardar la tienda");
-
-  return {
-    id: String(data.id),
-    name: String(data.name),
-    logoUrl: data.logo_url ? String(data.logo_url) : undefined,
-    domain: data.domain ? String(data.domain) : undefined,
-    country: data.country ? String(data.country) : "ES",
-    isActive: Boolean(data.is_active),
-    brandColor: data.brand_color ? String(data.brand_color) : undefined,
-    updatedAt: String(data.updated_at || new Date().toISOString()),
-  };
 }
 
 export async function deleteMerchant(id: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("merchants").delete().eq("id", id);
-  throwIfError(error, "No se pudo eliminar la tienda");
+  try {
+    const { error } = await supabase.from("merchants").delete().eq("id", id);
+    throwIfError(error, "No se pudo eliminar la tienda");
+
+    await safeLogAdminAction({
+      action: "merchant.delete",
+      entityType: "merchant",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "merchant.error",
+      entityType: "merchant",
+      entityId: id,
+      payload: {
+        operation: "delete",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function listCategories(): Promise<AdminCategoryRecord[]> {
@@ -577,78 +976,148 @@ export async function upsertCategory(input: CategoryMutationInput): Promise<Admi
   const name = sanitizeText(input.name, 120);
   const safeImageUrl = input.imageUrl ? sanitizeHttpUrl(input.imageUrl, 300) : "";
 
-  if (!name) {
-    throw new Error("La categoria requiere nombre");
-  }
+  try {
+    if (!name) {
+      await safeLogAdminAction({
+        action: "category.validation_failed",
+        entityType: "category",
+        entityId: input.id,
+        payload: { reason: "name_required" },
+      });
+      throw new Error("La categoria requiere nombre");
+    }
 
-  if (input.id && input.parentId === input.id) {
-    throw new Error("Una categoria no puede ser su propia categoria padre");
-  }
+    if (input.id && input.parentId === input.id) {
+      await safeLogAdminAction({
+        action: "category.validation_failed",
+        entityType: "category",
+        entityId: input.id,
+        payload: { reason: "self_parent" },
+      });
+      throw new Error("Una categoria no puede ser su propia categoria padre");
+    }
 
-  if (input.id && input.parentId) {
-    const cycleCheck = await supabase.rpc("category_parent_would_create_cycle", {
-      p_category_id: input.id,
-      p_parent_id: input.parentId,
+    if (input.id && input.parentId) {
+      const cycleCheck = await supabase.rpc("category_parent_would_create_cycle", {
+        p_category_id: input.id,
+        p_parent_id: input.parentId,
+      });
+
+      if (cycleCheck.error) {
+        throw new Error(cycleCheck.error.message || "No se pudo validar jerarquia de categorias");
+      }
+
+      if (cycleCheck.data) {
+        await safeLogAdminAction({
+          action: "category.validation_failed",
+          entityType: "category",
+          entityId: input.id,
+          payload: { reason: "cycle_detected", parentId: input.parentId },
+        });
+        throw new Error("No se puede guardar la categoria porque se genera un ciclo en la jerarquia");
+      }
+    }
+
+    if (input.imageUrl && !safeImageUrl) {
+      await safeLogAdminAction({
+        action: "category.validation_failed",
+        entityType: "category",
+        entityId: input.id,
+        payload: { reason: "invalid_image_url" },
+      });
+      throw new Error("La categoria requiere una URL de imagen valida (http/https)");
+    }
+
+    const slug = normalizeSlug(input.slug || name);
+
+    const payload = {
+      name,
+      slug,
+      parent_id: input.parentId || null,
+      icon: input.icon ? sanitizeText(input.icon, 32) : null,
+      image_url: safeImageUrl || null,
+      sort_order: sanitizeNumber(Number(input.sortOrder || 0), 0, 100000),
+      is_active: Boolean(input.isActive),
+    };
+
+    const isUpdate = Boolean(input.id);
+    const query = isUpdate
+      ? supabase
+          .from("categories")
+          .update(payload)
+          .eq("id", input.id)
+          .select("id,name,slug,parent_id,icon,image_url,sort_order,is_active,updated_at")
+          .single()
+      : supabase
+          .from("categories")
+          .insert(payload)
+          .select("id,name,slug,parent_id,icon,image_url,sort_order,is_active,updated_at")
+          .single();
+
+    const { data, error } = await query;
+    throwIfError(error, "No se pudo guardar la categoria");
+
+    const result = {
+      id: String(data.id),
+      name: String(data.name),
+      slug: data.slug ? String(data.slug) : undefined,
+      parentId: data.parent_id ? String(data.parent_id) : null,
+      icon: data.icon ? String(data.icon) : undefined,
+      imageUrl: data.image_url ? String(data.image_url) : undefined,
+      sortOrder: Number(data.sort_order || 0),
+      isActive: Boolean(data.is_active),
+      updatedAt: String(data.updated_at || new Date().toISOString()),
+    };
+
+    await safeLogAdminAction({
+      action: isUpdate ? "category.update" : "category.create",
+      entityType: "category",
+      entityId: result.id,
+      payload: {
+        name: result.name,
+        parentId: result.parentId || null,
+        isActive: result.isActive,
+      },
     });
 
-    if (cycleCheck.error) {
-      throw new Error(cycleCheck.error.message || "No se pudo validar jerarquia de categorias");
-    }
-
-    if (cycleCheck.data) {
-      throw new Error("No se puede guardar la categoria porque se genera un ciclo en la jerarquia");
-    }
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "category.error",
+      entityType: "category",
+      entityId: input.id,
+      payload: {
+        operation: input.id ? "update" : "create",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  if (input.imageUrl && !safeImageUrl) {
-    throw new Error("La categoria requiere una URL de imagen valida (http/https)");
-  }
-
-  const slug = normalizeSlug(input.slug || name);
-
-  const payload = {
-    name,
-    slug,
-    parent_id: input.parentId || null,
-    icon: input.icon ? sanitizeText(input.icon, 32) : null,
-    image_url: safeImageUrl || null,
-    sort_order: sanitizeNumber(Number(input.sortOrder || 0), 0, 100000),
-    is_active: Boolean(input.isActive),
-  };
-
-  const query = input.id
-    ? supabase
-        .from("categories")
-        .update(payload)
-        .eq("id", input.id)
-        .select("id,name,slug,parent_id,icon,image_url,sort_order,is_active,updated_at")
-        .single()
-    : supabase
-        .from("categories")
-        .insert(payload)
-        .select("id,name,slug,parent_id,icon,image_url,sort_order,is_active,updated_at")
-        .single();
-
-  const { data, error } = await query;
-  throwIfError(error, "No se pudo guardar la categoria");
-
-  return {
-    id: String(data.id),
-    name: String(data.name),
-    slug: data.slug ? String(data.slug) : undefined,
-    parentId: data.parent_id ? String(data.parent_id) : null,
-    icon: data.icon ? String(data.icon) : undefined,
-    imageUrl: data.image_url ? String(data.image_url) : undefined,
-    sortOrder: Number(data.sort_order || 0),
-    isActive: Boolean(data.is_active),
-    updatedAt: String(data.updated_at || new Date().toISOString()),
-  };
 }
 
 export async function deleteCategory(id: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("categories").delete().eq("id", id);
-  throwIfError(error, "No se pudo eliminar la categoria");
+  try {
+    const { error } = await supabase.from("categories").delete().eq("id", id);
+    throwIfError(error, "No se pudo eliminar la categoria");
+
+    await safeLogAdminAction({
+      action: "category.delete",
+      entityType: "category",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "category.error",
+      entityType: "category",
+      entityId: id,
+      payload: {
+        operation: "delete",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function listProducts(filters: ProductListFilters): Promise<{ rows: AdminProductRecord[]; total: number }> {
@@ -843,101 +1312,168 @@ export async function upsertProduct(input: ProductMutationInput): Promise<AdminP
   const name = sanitizeText(input.name, 180);
   const slug = normalizeSlug(input.slug || name);
 
-  if (!name) {
-    throw new Error("El producto requiere nombre");
-  }
+  try {
+    if (!name) {
+      await safeLogAdminAction({
+        action: "product.validation_failed",
+        entityType: "product",
+        entityId: input.id,
+        payload: { reason: "name_required" },
+      });
+      throw new Error("El producto requiere nombre");
+    }
 
-  if (!input.brandId) {
-    throw new Error("El producto requiere marca");
-  }
+    if (!input.brandId) {
+      await safeLogAdminAction({
+        action: "product.validation_failed",
+        entityType: "product",
+        entityId: input.id,
+        payload: { reason: "brand_required" },
+      });
+      throw new Error("El producto requiere marca");
+    }
 
-  if (!input.categoryId) {
-    throw new Error("El producto requiere categoria");
-  }
+    if (!input.categoryId) {
+      await safeLogAdminAction({
+        action: "product.validation_failed",
+        entityType: "product",
+        entityId: input.id,
+        payload: { reason: "category_required" },
+      });
+      throw new Error("El producto requiere categoria");
+    }
 
-  let existingSpecs: Record<string, unknown> = {};
-  if (input.id) {
-    const existing = await supabase.from("products").select("specs").eq("id", input.id).maybeSingle();
-    throwIfError(existing.error, "No se pudo validar producto existente");
-    existingSpecs = parseSpecsObject(existing.data?.specs);
-  }
+    let existingSpecs: Record<string, unknown> = {};
+    let existingAttributes: Record<string, unknown> = {};
+    if (input.id) {
+      const existing = await supabase.from("products").select("specs,attributes").eq("id", input.id).maybeSingle();
+      throwIfError(existing.error, "No se pudo validar producto existente");
+      existingSpecs = parseSpecsObject(existing.data?.specs);
+      existingAttributes = parseAttributes(existing.data?.attributes);
+    }
 
-  const technicalSpecs = toTechnicalSpecObject(input.technicalSpecs || []);
-  const payload = {
-    name,
-    slug,
-    brand_id: input.brandId,
-    category_id: input.categoryId,
-    description: sanitizeText(input.shortDescription || input.longDescription || "", 400),
-    short_description: sanitizeText(input.shortDescription || "", 400),
-    long_description: sanitizeText(input.longDescription || "", 2000),
-    specs: {
-      ...existingSpecs,
-      longDescription: sanitizeText(input.longDescription || "", 2000),
-      attributes: technicalSpecs,
+    const technicalSpecs = toTechnicalSpecObject(input.technicalSpecs || []);
+    const featured = Boolean(input.featured ?? existingSpecs.featured ?? existingAttributes.featured);
+    const teamRecommended = Boolean(
+      input.teamRecommended ?? existingSpecs.teamRecommended ?? existingAttributes.teamRecommended,
+    );
+    const editorialPrioritySource =
+      input.editorialPriority ?? existingSpecs.editorialPriority ?? existingAttributes.editorialPriority ?? 0;
+    const editorialPriority = sanitizeNumber(Number(editorialPrioritySource || 0), 0, 100);
+    const mergedAttributes = {
+      ...existingAttributes,
+      ...(input.attributes || {}),
+      featured,
+      teamRecommended,
+      editorialPriority,
+    };
+
+    const payload = {
+      name,
+      slug,
+      brand_id: input.brandId,
+      category_id: input.categoryId,
+      description: sanitizeText(input.shortDescription || input.longDescription || "", 400),
+      short_description: sanitizeText(input.shortDescription || "", 400),
+      long_description: sanitizeText(input.longDescription || "", 2000),
+      specs: {
+        ...existingSpecs,
+        longDescription: sanitizeText(input.longDescription || "", 2000),
+        attributes: technicalSpecs,
+        tags: (input.tags || []).map((tag) => sanitizeText(tag, 50)).filter(Boolean),
+        sku: input.sku ? sanitizeText(input.sku, 80) : null,
+        ean: input.ean ? sanitizeText(input.ean, 80) : null,
+        isActive: Boolean(input.isActive),
+        featured,
+        teamRecommended,
+        editorialPriority,
+      },
       tags: (input.tags || []).map((tag) => sanitizeText(tag, 50)).filter(Boolean),
+      attributes: mergedAttributes,
+      is_active: Boolean(input.isActive),
       sku: input.sku ? sanitizeText(input.sku, 80) : null,
       ean: input.ean ? sanitizeText(input.ean, 80) : null,
-      isActive: Boolean(input.isActive),
-    },
-    tags: (input.tags || []).map((tag) => sanitizeText(tag, 50)).filter(Boolean),
-    attributes: input.attributes || {},
-    is_active: Boolean(input.isActive),
-    sku: input.sku ? sanitizeText(input.sku, 80) : null,
-    ean: input.ean ? sanitizeText(input.ean, 80) : null,
-  };
+    };
 
-  const query = input.id
-    ? supabase
-        .from("products")
-        .update(payload)
-        .eq("id", input.id)
-        .select(
-          "id,name,slug,brand_id,category_id,description,short_description,long_description,specs,tags,attributes,is_active,sku,ean,created_at,updated_at",
-        )
-        .single()
-    : supabase
-        .from("products")
-        .insert(payload)
-        .select(
-          "id,name,slug,brand_id,category_id,description,short_description,long_description,specs,tags,attributes,is_active,sku,ean,created_at,updated_at",
-        )
-        .single();
+    const isUpdate = Boolean(input.id);
+    const query = isUpdate
+      ? supabase
+          .from("products")
+          .update(payload)
+          .eq("id", input.id)
+          .select(
+            "id,name,slug,brand_id,category_id,description,short_description,long_description,specs,tags,attributes,is_active,sku,ean,created_at,updated_at",
+          )
+          .single()
+      : supabase
+          .from("products")
+          .insert(payload)
+          .select(
+            "id,name,slug,brand_id,category_id,description,short_description,long_description,specs,tags,attributes,is_active,sku,ean,created_at,updated_at",
+          )
+          .single();
 
-  const { data, error } = await query;
-  throwIfError(error, "No se pudo guardar el producto");
+    const { data, error } = await query;
+    throwIfError(error, "No se pudo guardar el producto");
 
-  const [brandRes, categoryRes] = await Promise.all([
-    supabase.from("brands").select("name").eq("id", data.brand_id).maybeSingle(),
-    supabase.from("categories").select("name,parent_id").eq("id", data.category_id).maybeSingle(),
-  ]);
+    const [brandRes, categoryRes] = await Promise.all([
+      supabase.from("brands").select("name").eq("id", data.brand_id).maybeSingle(),
+      supabase.from("categories").select("name,parent_id").eq("id", data.category_id).maybeSingle(),
+    ]);
 
-  throwIfError(brandRes.error, "No se pudo cargar marca del producto guardado");
-  throwIfError(categoryRes.error, "No se pudo cargar categoria del producto guardado");
+    throwIfError(brandRes.error, "No se pudo cargar marca del producto guardado");
+    throwIfError(categoryRes.error, "No se pudo cargar categoria del producto guardado");
 
-  let parentName: string | undefined;
-  if (categoryRes.data?.parent_id) {
-    const parent = await supabase.from("categories").select("name").eq("id", categoryRes.data.parent_id).maybeSingle();
-    throwIfError(parent.error, "No se pudo cargar subcategoria del producto guardado");
-    parentName = parent.data?.name ? String(parent.data.name) : undefined;
+    let parentName: string | undefined;
+    if (categoryRes.data?.parent_id) {
+      const parent = await supabase.from("categories").select("name").eq("id", categoryRes.data.parent_id).maybeSingle();
+      throwIfError(parent.error, "No se pudo cargar subcategoria del producto guardado");
+      parentName = parent.data?.name ? String(parent.data.name) : undefined;
+    }
+
+    const result = mapProductRow(
+      data as unknown as Record<string, unknown>,
+      new Map<string, string>([[String(data.brand_id), brandRes.data?.name ? String(brandRes.data.name) : "Sin marca"]]),
+      new Map<string, { name: string; parentId?: string | null; parentName?: string }>([
+        [
+          String(data.category_id),
+          {
+            name: categoryRes.data?.name ? String(categoryRes.data.name) : "Sin categoria",
+            parentId: categoryRes.data?.parent_id ? String(categoryRes.data.parent_id) : null,
+            parentName,
+          },
+        ],
+      ]),
+      new Map<string, { offerCount: number; minPrice: number }>([[String(data.id), { offerCount: 0, minPrice: 0 }]]),
+      new Map<string, string>(),
+    );
+
+    await safeLogAdminAction({
+      action: isUpdate ? "product.update" : "product.create",
+      entityType: "product",
+      entityId: result.id,
+      payload: {
+        name: result.name,
+        slug: result.slug,
+        categoryId: result.categoryId,
+        brandId: result.brandId,
+        isActive: result.isActive,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.error",
+      entityType: "product",
+      entityId: input.id,
+      payload: {
+        operation: input.id ? "update" : "create",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  return mapProductRow(
-    data as unknown as Record<string, unknown>,
-    new Map<string, string>([[String(data.brand_id), brandRes.data?.name ? String(brandRes.data.name) : "Sin marca"]]),
-    new Map<string, { name: string; parentId?: string | null; parentName?: string }>([
-      [
-        String(data.category_id),
-        {
-          name: categoryRes.data?.name ? String(categoryRes.data.name) : "Sin categoria",
-          parentId: categoryRes.data?.parent_id ? String(categoryRes.data.parent_id) : null,
-          parentName,
-        },
-      ],
-    ]),
-    new Map<string, { offerCount: number; minPrice: number }>([[String(data.id), { offerCount: 0, minPrice: 0 }]]),
-    new Map<string, string>(),
-  );
 }
 
 export async function duplicateProduct(productId: string): Promise<AdminProductRecord> {
@@ -973,8 +1509,27 @@ export async function duplicateProduct(productId: string): Promise<AdminProductR
 export async function deleteProduct(id: string): Promise<void> {
   await enforceAdminRateLimit("productDelete");
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("products").delete().eq("id", id);
-  throwIfError(error, "No se pudo eliminar el producto");
+  try {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    throwIfError(error, "No se pudo eliminar el producto");
+
+    await safeLogAdminAction({
+      action: "product.delete",
+      entityType: "product",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.error",
+      entityType: "product",
+      entityId: id,
+      payload: {
+        operation: "delete",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function listProductsForSelect(search: string, limit = 25): Promise<Array<{ id: string; name: string }>> {
@@ -1024,47 +1579,122 @@ export async function addProductImage(productId: string, url: string, isPrimary:
   const supabase = getSupabaseClient();
   const safeUrl = sanitizeHttpUrl(url, 400);
 
-  if (!safeUrl) {
-    throw new Error("La imagen requiere una URL valida (http/https)");
+  try {
+    if (!safeUrl) {
+      await safeLogAdminAction({
+        action: "product.image.validation_failed",
+        entityType: "product",
+        entityId: productId,
+        payload: { reason: "invalid_url" },
+      });
+      throw new Error("La imagen requiere una URL valida (http/https)");
+    }
+
+    if (isPrimary) {
+      const resetPrimary = await supabase.from("product_images").update({ is_primary: false }).eq("product_id", productId);
+      throwIfError(resetPrimary.error, "No se pudo preparar imagen principal");
+    }
+
+    const { data, error } = await supabase
+      .from("product_images")
+      .insert({ product_id: productId, url: safeUrl, is_primary: isPrimary })
+      .select("id,product_id,url,is_primary")
+      .single();
+
+    throwIfError(error, "No se pudo agregar la imagen");
+
+    const result = {
+      id: String(data.id),
+      productId: String(data.product_id),
+      url: String(data.url),
+      isPrimary: Boolean(data.is_primary),
+    };
+
+    await safeLogAdminAction({
+      action: "product.image.add",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        imageId: result.id,
+        isPrimary: result.isPrimary,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.image.error",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        operation: "add",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  if (isPrimary) {
-    const resetPrimary = await supabase.from("product_images").update({ is_primary: false }).eq("product_id", productId);
-    throwIfError(resetPrimary.error, "No se pudo preparar imagen principal");
-  }
-
-  const { data, error } = await supabase
-    .from("product_images")
-    .insert({ product_id: productId, url: safeUrl, is_primary: isPrimary })
-    .select("id,product_id,url,is_primary")
-    .single();
-
-  throwIfError(error, "No se pudo agregar la imagen");
-
-  return {
-    id: String(data.id),
-    productId: String(data.product_id),
-    url: String(data.url),
-    isPrimary: Boolean(data.is_primary),
-  };
 }
 
 export async function setPrimaryProductImage(productId: string, imageId: string): Promise<void> {
   const supabase = getSupabaseClient();
 
-  const [resetResult, setResult] = await Promise.all([
-    supabase.from("product_images").update({ is_primary: false }).eq("product_id", productId),
-    supabase.from("product_images").update({ is_primary: true }).eq("id", imageId).eq("product_id", productId),
-  ]);
+  try {
+    const [resetResult, setResult] = await Promise.all([
+      supabase.from("product_images").update({ is_primary: false }).eq("product_id", productId),
+      supabase.from("product_images").update({ is_primary: true }).eq("id", imageId).eq("product_id", productId),
+    ]);
 
-  throwIfError(resetResult.error, "No se pudo limpiar imagen principal");
-  throwIfError(setResult.error, "No se pudo actualizar imagen principal");
+    throwIfError(resetResult.error, "No se pudo limpiar imagen principal");
+    throwIfError(setResult.error, "No se pudo actualizar imagen principal");
+
+    await safeLogAdminAction({
+      action: "product.image.set_primary",
+      entityType: "product",
+      entityId: productId,
+      payload: { imageId },
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.image.error",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        operation: "set_primary",
+        imageId,
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function deleteProductImage(imageId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("product_images").delete().eq("id", imageId);
-  throwIfError(error, "No se pudo eliminar la imagen");
+  try {
+    const lookup = await supabase.from("product_images").select("product_id").eq("id", imageId).maybeSingle();
+    throwIfError(lookup.error, "No se pudo validar imagen");
+
+    const { error } = await supabase.from("product_images").delete().eq("id", imageId);
+    throwIfError(error, "No se pudo eliminar la imagen");
+
+    await safeLogAdminAction({
+      action: "product.image.delete",
+      entityType: "product",
+      entityId: lookup.data?.product_id ? String(lookup.data.product_id) : undefined,
+      payload: { imageId },
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.image.error",
+      entityType: "product",
+      payload: {
+        operation: "delete",
+        imageId,
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function uploadProductImage(productId: string, file: File, isPrimary: boolean): Promise<AdminProductImageRecord> {
@@ -1073,30 +1703,134 @@ export async function uploadProductImage(productId: string, file: File, isPrimar
   const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
   const maxFileSizeBytes = 10 * 1024 * 1024;
 
-  if (!allowedTypes.has(file.type)) {
-    throw new Error("Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF");
+  try {
+    if (!allowedTypes.has(file.type)) {
+      await safeLogAdminAction({
+        action: "product.image.validation_failed",
+        entityType: "product",
+        entityId: productId,
+        payload: { reason: "invalid_mime", mimeType: file.type || "unknown" },
+      });
+      throw new Error("Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF");
+    }
+
+    if (file.size > maxFileSizeBytes) {
+      await safeLogAdminAction({
+        action: "product.image.validation_failed",
+        entityType: "product",
+        entityId: productId,
+        payload: { reason: "file_too_large", fileSize: file.size },
+      });
+      throw new Error("La imagen supera el limite de 10MB");
+    }
+
+    const extension = file.name.includes(".") ? file.name.split(".").pop() || "jpg" : "jpg";
+    const fileName = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}.${sanitizeText(extension, 10)}`;
+    const filePath = `${productId}/${fileName}`;
+
+    const upload = await supabase.storage
+      .from("product-images")
+      .upload(filePath, file, { upsert: false, contentType: file.type || "image/jpeg" });
+
+    if (upload.error) {
+      await safeLogAdminAction({
+        action: "product.image.storage_error",
+        entityType: "product",
+        entityId: productId,
+        payload: {
+          filePath,
+          ...toAuditErrorPayload(upload.error),
+        },
+      });
+      throw new Error(
+        "No se pudo subir el archivo al bucket product-images. Crea el bucket en Supabase Storage y concede permisos de lectura publica.",
+      );
+    }
+
+    const publicUrl = supabase.storage.from("product-images").getPublicUrl(upload.data.path).data.publicUrl;
+    const image = await addProductImage(productId, publicUrl, isPrimary);
+
+    await safeLogAdminAction({
+      action: "product.image.upload",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        imageId: image.id,
+        isPrimary: image.isPrimary,
+        mimeType: file.type || null,
+        fileSize: file.size,
+      },
+    });
+
+    return image;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.image.error",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        operation: "upload",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
+}
 
-  if (file.size > maxFileSizeBytes) {
-    throw new Error("La imagen supera el limite de 10MB");
+function mapOfferRow(row: Record<string, unknown>): AdminOfferRecord {
+  const productData =
+    row.products && typeof row.products === "object" && !Array.isArray(row.products)
+      ? (row.products as { name?: unknown; category_id?: unknown; categories?: unknown })
+      : null;
+  const merchantData =
+    row.merchants && typeof row.merchants === "object" && !Array.isArray(row.merchants)
+      ? (row.merchants as { name?: unknown })
+      : null;
+  const categoryDataRaw = productData?.categories;
+  const categoryData = Array.isArray(categoryDataRaw)
+    ? (categoryDataRaw[0] as { name?: unknown } | undefined)
+    : (categoryDataRaw as { name?: unknown } | undefined);
+
+  const currentPrice = Number(row.current_price ?? row.price ?? 0);
+  const oldPrice = row.old_price ? Number(row.old_price) : undefined;
+  const discountPercent = oldPrice && oldPrice > 0 ? Math.max(0, Math.round(((oldPrice - currentPrice) / oldPrice) * 100)) : undefined;
+
+  return {
+    id: String(row.id),
+    productId: String(row.product_id),
+    productName: productData?.name ? String(productData.name) : "Producto",
+    categoryId: productData?.category_id ? String(productData.category_id) : undefined,
+    categoryName: categoryData?.name ? String(categoryData.name) : undefined,
+    merchantId: String(row.merchant_id),
+    merchantName: merchantData?.name ? String(merchantData.name) : "Tienda",
+    sourceType: sanitizeOfferSourceType(row.source_type, "manual"),
+    updateMode: sanitizeOfferUpdateMode(row.update_mode, "manual"),
+    syncStatus: sanitizeOfferSyncStatus(row.sync_status, "ok"),
+    currentPrice,
+    price: currentPrice,
+    oldPrice,
+    discountPercent,
+    url: String(row.url || ""),
+    stock: Boolean(row.stock),
+    isActive: Boolean(row.is_active),
+    isFeatured: Boolean(row.is_featured),
+    lastCheckedAt: row.last_checked_at ? String(row.last_checked_at) : undefined,
+    lastUpdatedBy: row.last_updated_by ? String(row.last_updated_by) : undefined,
+    lastSyncError: row.last_sync_error ? String(row.last_sync_error) : undefined,
+    nextCheckAt: row.next_check_at ? String(row.next_check_at) : undefined,
+    priorityScore: typeof row.priority_score === "number" ? row.priority_score : Number(row.priority_score || 0),
+    freshnessScore: typeof row.freshness_score === "number" ? row.freshness_score : Number(row.freshness_score || 0),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
+}
+
+async function recalculateOfferPriorityScoresSafe(): Promise<void> {
+  try {
+    const supabase = getSupabaseClient();
+    await supabase.rpc("recalculate_offer_priority_scores", { p_stale_hours: 72 });
+  } catch {
+    // Non-blocking best effort recalculation.
   }
-
-  const extension = file.name.includes(".") ? file.name.split(".").pop() || "jpg" : "jpg";
-  const fileName = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}.${sanitizeText(extension, 10)}`;
-  const filePath = `${productId}/${fileName}`;
-
-  const upload = await supabase.storage
-    .from("product-images")
-    .upload(filePath, file, { upsert: false, contentType: file.type || "image/jpeg" });
-
-  if (upload.error) {
-    throw new Error(
-      "No se pudo subir el archivo al bucket product-images. Crea el bucket en Supabase Storage y concede permisos de lectura publica.",
-    );
-  }
-
-  const publicUrl = supabase.storage.from("product-images").getPublicUrl(upload.data.path).data.publicUrl;
-  return addProductImage(productId, publicUrl, isPrimary);
 }
 
 export async function listOffers(filters: OfferListFilters): Promise<{ rows: AdminOfferRecord[]; total: number }> {
@@ -1106,21 +1840,49 @@ export async function listOffers(filters: OfferListFilters): Promise<{ rows: Adm
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  let categoryProductIds: string[] | null = null;
+  if (filters.categoryId) {
+    const categoryProducts = await supabase.from("products").select("id").eq("category_id", filters.categoryId).limit(5000);
+    throwIfError(categoryProducts.error, "No se pudieron filtrar productos por categoria");
+    categoryProductIds = (categoryProducts.data || []).map((row) => String(row.id));
+
+    if (!categoryProductIds.length) {
+      return { rows: [], total: 0 };
+    }
+  }
+
   let query = supabase
     .from("offers")
     .select(
-      "id,product_id,merchant_id,price,old_price,url,stock,is_active,is_featured,updated_at,products(name),merchants(name)",
+      "id,product_id,merchant_id,price,current_price,old_price,url,stock,is_active,is_featured,source_type,update_mode,sync_status,last_checked_at,last_updated_by,last_sync_error,next_check_at,priority_score,freshness_score,updated_at,products(name,category_id,categories(name)),merchants(name)",
       { count: "exact" },
     )
-    .order("updated_at", { ascending: false })
     .range(from, to);
+
+  if (filters.reviewQueueFirst) {
+    query = query.order("sync_status", { ascending: true }).order("priority_score", { ascending: false }).order("updated_at", { ascending: false });
+  } else {
+    query = query.order("updated_at", { ascending: false });
+  }
 
   if (filters.productId) {
     query = query.eq("product_id", filters.productId);
   }
 
+  if (categoryProductIds && categoryProductIds.length) {
+    query = query.in("product_id", categoryProductIds);
+  }
+
   if (filters.merchantId) {
     query = query.eq("merchant_id", filters.merchantId);
+  }
+
+  if (filters.sourceType) {
+    query = query.eq("source_type", sanitizeOfferSourceType(filters.sourceType));
+  }
+
+  if (filters.syncStatus) {
+    query = query.eq("sync_status", sanitizeOfferSyncStatus(filters.syncStatus));
   }
 
   if (typeof filters.isActive === "boolean") {
@@ -1136,33 +1898,7 @@ export async function listOffers(filters: OfferListFilters): Promise<{ rows: Adm
   throwIfError(error, "No se pudieron cargar ofertas");
 
   return {
-    rows: (data || []).map((row: Record<string, unknown>) => {
-      const price = Number(row.price || 0);
-      const oldPrice = row.old_price ? Number(row.old_price) : undefined;
-      const discountPercent = oldPrice && oldPrice > 0 ? Math.max(0, Math.round(((oldPrice - price) / oldPrice) * 100)) : undefined;
-
-      return {
-        id: String(row.id),
-        productId: String(row.product_id),
-        productName:
-          typeof row.products === "object" && row.products !== null && "name" in row.products
-            ? String((row.products as { name?: string }).name || "Producto")
-            : "Producto",
-        merchantId: String(row.merchant_id),
-        merchantName:
-          typeof row.merchants === "object" && row.merchants !== null && "name" in row.merchants
-            ? String((row.merchants as { name?: string }).name || "Tienda")
-            : "Tienda",
-        price,
-        oldPrice,
-        discountPercent,
-        url: String(row.url || ""),
-        stock: Boolean(row.stock),
-        isActive: Boolean(row.is_active),
-        isFeatured: Boolean(row.is_featured),
-        updatedAt: String(row.updated_at || new Date().toISOString()),
-      };
-    }),
+    rows: (data || []).map((row: Record<string, unknown>) => mapOfferRow(row)),
     total: count || 0,
   };
 }
@@ -1171,85 +1907,402 @@ export async function upsertOffer(input: OfferMutationInput): Promise<AdminOffer
   await enforceAdminRateLimit("offerWrite");
   const supabase = getSupabaseClient();
 
-  if (!input.productId || !input.merchantId) {
-    throw new Error("La oferta requiere producto y tienda");
+  try {
+    if (!input.productId || !input.merchantId) {
+      await safeLogAdminAction({
+        action: "offer.validation_failed",
+        entityType: "offer",
+        entityId: input.id,
+        payload: { reason: "product_or_merchant_required" },
+      });
+      throw new Error("La oferta requiere producto y tienda");
+    }
+
+    const merchantLookup = await supabase
+      .from("merchants")
+      .select("id,name,domain")
+      .eq("id", input.merchantId)
+      .maybeSingle();
+    throwIfError(merchantLookup.error, "No se pudo cargar la tienda de la oferta");
+
+    if (!merchantLookup.data) {
+      await safeLogAdminAction({
+        action: "offer.validation_failed",
+        entityType: "offer",
+        entityId: input.id,
+        payload: { reason: "merchant_not_found", merchantId: input.merchantId },
+      });
+      throw new Error("La oferta requiere una tienda valida");
+    }
+
+    const merchantDomain = sanitizeDomainValue(String(merchantLookup.data.domain || ""));
+    const price = sanitizeNumber(Number(input.price), 0, 1_000_000);
+    const oldPrice = typeof input.oldPrice === "number" && Number.isFinite(input.oldPrice)
+      ? sanitizeNumber(Number(input.oldPrice), 0, 1_000_000)
+      : null;
+    const safeUrl = sanitizeAffiliateOfferUrl(input.url, merchantDomain || undefined);
+
+    if (price <= 0) {
+      await safeLogAdminAction({
+        action: "offer.validation_failed",
+        entityType: "offer",
+        entityId: input.id,
+        payload: { reason: "invalid_price" },
+      });
+      throw new Error("La oferta requiere un precio mayor que 0");
+    }
+
+    if (!safeUrl) {
+      await safeLogAdminAction({
+        action: "offer.validation_failed",
+        entityType: "offer",
+        entityId: input.id,
+        payload: { reason: "invalid_or_disallowed_affiliate_url", merchantDomain: merchantDomain || null },
+      });
+      throw new Error("La oferta requiere una URL HTTPS valida y del dominio permitido para la tienda");
+    }
+
+    if (!merchantDomain) {
+      const inferredDomain = extractDomainFromAffiliateUrl(safeUrl);
+      if (!inferredDomain) {
+        throw new Error("No se pudo inferir el dominio de la tienda para validar el enlace");
+      }
+
+      const updateDomainResult = await supabase
+        .from("merchants")
+        .update({ domain: inferredDomain })
+        .eq("id", input.merchantId);
+      throwIfError(updateDomainResult.error, "No se pudo completar la configuracion de dominio de la tienda");
+
+      await safeLogAdminAction({
+        action: "merchant.domain.inferred",
+        entityType: "merchant",
+        entityId: input.merchantId,
+        payload: {
+          domain: inferredDomain,
+          source: "offer_upsert",
+        },
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const existingOfferResult = input.id
+      ? await supabase
+          .from("offers")
+          .select(
+            "id,current_price,source_type,update_mode,sync_status,last_sync_error,next_check_at,priority_score,freshness_score",
+          )
+          .eq("id", input.id)
+          .maybeSingle()
+      : ({ data: null, error: null } as const);
+
+    throwIfError(existingOfferResult.error, "No se pudo cargar contexto de la oferta");
+
+    const existingCurrentPrice = existingOfferResult.data?.current_price
+      ? Number(existingOfferResult.data.current_price)
+      : undefined;
+    const safeSourceType = sanitizeOfferSourceType(input.sourceType || existingOfferResult.data?.source_type, "manual");
+    const safeUpdateMode = sanitizeOfferUpdateMode(input.updateMode || existingOfferResult.data?.update_mode, "manual");
+    const safeSyncStatus = sanitizeOfferSyncStatus(input.syncStatus || "ok", "ok");
+    const normalizedOldPrice = oldPrice ?? (existingCurrentPrice && existingCurrentPrice !== price ? existingCurrentPrice : null);
+
+    const payload = {
+      product_id: input.productId,
+      merchant_id: input.merchantId,
+      price,
+      current_price: price,
+      old_price: normalizedOldPrice,
+      url: safeUrl,
+      stock: Boolean(input.stock),
+      is_active: Boolean(input.isActive),
+      is_featured: Boolean(input.isFeatured),
+      source_type: safeSourceType,
+      update_mode: safeUpdateMode,
+      sync_status: safeSyncStatus,
+      last_checked_at: nowIso,
+      last_sync_error:
+        safeSyncStatus === "error"
+          ? sanitizeText(input.lastSyncError || existingOfferResult.data?.last_sync_error || "sync_error", 500)
+          : null,
+      next_check_at: input.nextCheckAt || existingOfferResult.data?.next_check_at || defaultNextOfferCheckAt(),
+      priority_score: sanitizeNumber(Number(input.priorityScore ?? existingOfferResult.data?.priority_score ?? 0), 0, 100000),
+      freshness_score: sanitizeNumber(Number(input.freshnessScore ?? 100), 0, 100),
+    };
+
+    const isUpdate = Boolean(input.id);
+    const query = isUpdate
+      ? supabase
+          .from("offers")
+          .update(payload)
+          .eq("id", input.id)
+          .select(
+            "id,product_id,merchant_id,price,current_price,old_price,url,stock,is_active,is_featured,source_type,update_mode,sync_status,last_checked_at,last_updated_by,last_sync_error,next_check_at,priority_score,freshness_score,updated_at",
+          )
+          .single()
+      : supabase
+          .from("offers")
+          .insert(payload)
+          .select(
+            "id,product_id,merchant_id,price,current_price,old_price,url,stock,is_active,is_featured,source_type,update_mode,sync_status,last_checked_at,last_updated_by,last_sync_error,next_check_at,priority_score,freshness_score,updated_at",
+          )
+          .single();
+
+    const { data, error } = await query;
+    throwIfError(error, "No se pudo guardar la oferta");
+
+    const [productRes, merchantRes] = await Promise.all([
+      supabase.from("products").select("name").eq("id", data.product_id).maybeSingle(),
+      supabase.from("merchants").select("name").eq("id", data.merchant_id).maybeSingle(),
+    ]);
+
+    throwIfError(productRes.error, "No se pudo cargar producto de la oferta");
+    throwIfError(merchantRes.error, "No se pudo cargar tienda de la oferta");
+
+    const safePrice = Number(data.current_price || data.price || 0);
+    const safeOldPrice = data.old_price ? Number(data.old_price) : undefined;
+
+    const result = {
+      id: String(data.id),
+      productId: String(data.product_id),
+      productName: productRes.data?.name ? String(productRes.data.name) : "Producto",
+      merchantId: String(data.merchant_id),
+      merchantName: merchantRes.data?.name ? String(merchantRes.data.name) : "Tienda",
+      sourceType: sanitizeOfferSourceType(data.source_type, safeSourceType),
+      updateMode: sanitizeOfferUpdateMode(data.update_mode, safeUpdateMode),
+      syncStatus: sanitizeOfferSyncStatus(data.sync_status, safeSyncStatus),
+      currentPrice: safePrice,
+      price: safePrice,
+      oldPrice: safeOldPrice,
+      discountPercent:
+        safeOldPrice && safeOldPrice > 0 ? Math.max(0, Math.round(((safeOldPrice - safePrice) / safeOldPrice) * 100)) : undefined,
+      url: String(data.url),
+      stock: Boolean(data.stock),
+      isActive: Boolean(data.is_active),
+      isFeatured: Boolean(data.is_featured),
+      lastCheckedAt: data.last_checked_at ? String(data.last_checked_at) : undefined,
+      lastUpdatedBy: data.last_updated_by ? String(data.last_updated_by) : undefined,
+      lastSyncError: data.last_sync_error ? String(data.last_sync_error) : undefined,
+      nextCheckAt: data.next_check_at ? String(data.next_check_at) : undefined,
+      priorityScore: Number(data.priority_score || 0),
+      freshnessScore: Number(data.freshness_score || 0),
+      updatedAt: String(data.updated_at || new Date().toISOString()),
+    };
+
+    await mark_offer_fresh(result.id);
+    await recalculateOfferPriorityScoresSafe();
+
+    await safeLogAdminAction({
+      action: isUpdate ? "offer.update" : "offer.create",
+      entityType: "offer",
+      entityId: result.id,
+      payload: {
+        productId: result.productId,
+        merchantId: result.merchantId,
+        isActive: result.isActive,
+        sourceType: result.sourceType,
+        updateMode: result.updateMode,
+        syncStatus: result.syncStatus,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "offer.error",
+      entityType: "offer",
+      entityId: input.id,
+      payload: {
+        operation: input.id ? "update" : "create",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
   }
-
-  const price = sanitizeNumber(Number(input.price), 0, 1_000_000);
-  const oldPrice = typeof input.oldPrice === "number" && Number.isFinite(input.oldPrice)
-    ? sanitizeNumber(Number(input.oldPrice), 0, 1_000_000)
-    : null;
-  const safeUrl = sanitizeHttpUrl(input.url, 400);
-
-  if (price <= 0) {
-    throw new Error("La oferta requiere un precio mayor que 0");
-  }
-
-  if (!safeUrl) {
-    throw new Error("La oferta requiere una URL valida (http/https)");
-  }
-
-  const payload = {
-    product_id: input.productId,
-    merchant_id: input.merchantId,
-    price,
-    old_price: oldPrice,
-    url: safeUrl,
-    stock: Boolean(input.stock),
-    is_active: Boolean(input.isActive),
-    is_featured: Boolean(input.isFeatured),
-  };
-
-  const query = input.id
-    ? supabase
-        .from("offers")
-        .update(payload)
-        .eq("id", input.id)
-        .select("id,product_id,merchant_id,price,old_price,url,stock,is_active,is_featured,updated_at")
-        .single()
-    : supabase
-        .from("offers")
-        .insert(payload)
-        .select("id,product_id,merchant_id,price,old_price,url,stock,is_active,is_featured,updated_at")
-        .single();
-
-  const { data, error } = await query;
-  throwIfError(error, "No se pudo guardar la oferta");
-
-  const [productRes, merchantRes] = await Promise.all([
-    supabase.from("products").select("name").eq("id", data.product_id).maybeSingle(),
-    supabase.from("merchants").select("name").eq("id", data.merchant_id).maybeSingle(),
-  ]);
-
-  throwIfError(productRes.error, "No se pudo cargar producto de la oferta");
-  throwIfError(merchantRes.error, "No se pudo cargar tienda de la oferta");
-
-  const safePrice = Number(data.price || 0);
-  const safeOldPrice = data.old_price ? Number(data.old_price) : undefined;
-
-  return {
-    id: String(data.id),
-    productId: String(data.product_id),
-    productName: productRes.data?.name ? String(productRes.data.name) : "Producto",
-    merchantId: String(data.merchant_id),
-    merchantName: merchantRes.data?.name ? String(merchantRes.data.name) : "Tienda",
-    price: safePrice,
-    oldPrice: safeOldPrice,
-    discountPercent:
-      safeOldPrice && safeOldPrice > 0 ? Math.max(0, Math.round(((safeOldPrice - safePrice) / safeOldPrice) * 100)) : undefined,
-    url: String(data.url),
-    stock: Boolean(data.stock),
-    isActive: Boolean(data.is_active),
-    isFeatured: Boolean(data.is_featured),
-    updatedAt: String(data.updated_at || new Date().toISOString()),
-  };
 }
 
 export async function deleteOffer(id: string): Promise<void> {
   await enforceAdminRateLimit("offerDelete");
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("offers").delete().eq("id", id);
-  throwIfError(error, "No se pudo eliminar la oferta");
+  try {
+    const { error } = await supabase.from("offers").delete().eq("id", id);
+    throwIfError(error, "No se pudo eliminar la oferta");
+
+    await safeLogAdminAction({
+      action: "offer.delete",
+      entityType: "offer",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "offer.error",
+      entityType: "offer",
+      entityId: id,
+      payload: {
+        operation: "delete",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function deactivateOffer(id: string): Promise<void> {
+  await enforceAdminRateLimit("offerWrite");
+  const supabase = getSupabaseClient();
+
+  try {
+    const { error } = await supabase
+      .from("offers")
+      .update({
+        is_active: false,
+        sync_status: "stale",
+        next_check_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    throwIfError(error, "No se pudo desactivar la oferta");
+    await mark_offer_stale(id, "offer_deactivated");
+
+    await safeLogAdminAction({
+      action: "offer.deactivate",
+      entityType: "offer",
+      entityId: id,
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "offer.error",
+      entityType: "offer",
+      entityId: id,
+      payload: {
+        operation: "deactivate",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function markOfferReviewed(offerId: string): Promise<void> {
+  await enforceAdminRateLimit("offerWrite");
+  const marked = await mark_offer_fresh(offerId);
+
+  if (!marked) {
+    throw new Error("No se encontro la oferta para marcar como revisada");
+  }
+
+  await recalculateOfferPriorityScoresSafe();
+}
+
+export async function markOfferAsStale(offerId: string, reason = "manual_stale"): Promise<void> {
+  await enforceAdminRateLimit("offerWrite");
+  const marked = await mark_offer_stale(offerId, reason);
+
+  if (!marked) {
+    throw new Error("No se encontro la oferta para marcar como desactualizada");
+  }
+
+  await recalculateOfferPriorityScoresSafe();
+}
+
+export async function requestOfferSync(offerId: string): Promise<void> {
+  await enforceAdminRateLimit("offerWrite");
+  const result = await sync_price_for_offer(offerId);
+
+  if (!result.changed) {
+    throw new Error("No se pudo encolar la sincronizacion de la oferta");
+  }
+}
+
+export async function runOffersSyncBatch(limit = 50): Promise<number> {
+  await enforceAdminRateLimit("offerWrite");
+  const result = await sync_offers_batch(limit);
+  return result.syncedOfferIds.length;
+}
+
+export async function saveOfferPriceChange(input: {
+  offerId: string;
+  price: number;
+  oldPrice?: number;
+  stock?: boolean;
+}): Promise<AdminOfferRecord> {
+  await enforceAdminRateLimit("offerWrite");
+  const supabase = getSupabaseClient();
+  const lookup = await supabase
+    .from("offers")
+    .select(
+      "id,product_id,merchant_id,url,stock,is_active,is_featured,source_type,update_mode,sync_status,last_sync_error,next_check_at,priority_score,freshness_score,current_price",
+    )
+    .eq("id", input.offerId)
+    .maybeSingle();
+
+  throwIfError(lookup.error, "No se pudo cargar la oferta para actualizar precio");
+  if (!lookup.data) {
+    throw new Error("No se encontro la oferta a actualizar");
+  }
+
+  const updated = await upsertOffer({
+    id: String(lookup.data.id),
+    productId: String(lookup.data.product_id),
+    merchantId: String(lookup.data.merchant_id),
+    price: sanitizeNumber(Number(input.price), 0, 1_000_000),
+    oldPrice:
+      typeof input.oldPrice === "number"
+        ? sanitizeNumber(Number(input.oldPrice), 0, 1_000_000)
+        : Number(lookup.data.current_price || 0),
+    url: String(lookup.data.url || ""),
+    stock: typeof input.stock === "boolean" ? input.stock : Boolean(lookup.data.stock),
+    isActive: Boolean(lookup.data.is_active),
+    isFeatured: Boolean(lookup.data.is_featured),
+    sourceType: sanitizeOfferSourceType(lookup.data.source_type, "manual"),
+    updateMode: sanitizeOfferUpdateMode(lookup.data.update_mode, "manual"),
+    syncStatus: "ok",
+    lastSyncError: undefined,
+    nextCheckAt: lookup.data.next_check_at ? String(lookup.data.next_check_at) : defaultNextOfferCheckAt(),
+    priorityScore: Number(lookup.data.priority_score || 0),
+    freshnessScore: 100,
+  });
+
+  return updated;
+}
+
+export async function registerOfferPriceHistorySnapshot(
+  offerId: string,
+  reason = "manual_review",
+  metadata?: Record<string, unknown>,
+): Promise<boolean> {
+  return update_price_history_on_change(offerId, sanitizeText(reason, 80), metadata);
+}
+
+export async function listOfferPriceHistory(offerId: string, limit = 120): Promise<AdminOfferPriceHistoryRecord[]> {
+  const supabase = getSupabaseClient();
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit || 120)));
+
+  const { data, error } = await supabase
+    .from("offer_price_history")
+    .select(
+      "id,offer_id,product_id,merchant_id,price,old_price,source_type,update_mode,sync_status,changed_by,change_reason,checked_at,created_at",
+    )
+    .eq("offer_id", offerId)
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  throwIfError(error, "No se pudo cargar historial de precios de la oferta");
+
+  return (data || []).map((row) => ({
+    id: String(row.id),
+    offerId: String(row.offer_id),
+    productId: String(row.product_id),
+    merchantId: String(row.merchant_id),
+    price: Number(row.price || 0),
+    oldPrice: row.old_price ? Number(row.old_price) : undefined,
+    sourceType: sanitizeOfferSourceType(row.source_type),
+    updateMode: sanitizeOfferUpdateMode(row.update_mode),
+    syncStatus: sanitizeOfferSyncStatus(row.sync_status),
+    changedBy: row.changed_by ? String(row.changed_by) : undefined,
+    changeReason: row.change_reason ? String(row.change_reason) : undefined,
+    checkedAt: String(row.checked_at || row.created_at || new Date().toISOString()),
+    createdAt: String(row.created_at || new Date().toISOString()),
+  }));
 }
 
 export async function listClicks(limit = 100): Promise<AdminClickRecord[]> {
@@ -1307,17 +2360,15 @@ export async function logAdminAction(input: {
   entityType: string;
   entityId?: string;
   payload?: Record<string, unknown>;
+  source?: string;
 }): Promise<void> {
-  const supabase = getSupabaseClient();
-
-  const { error } = await supabase.from("admin_actions").insert({
-    action: sanitizeText(input.action, 80),
-    entity_type: sanitizeText(input.entityType, 80),
-    entity_id: input.entityId || null,
-    payload: input.payload || {},
+  await safeLogAdminAction({
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    payload: input.payload,
+    source: input.source || "adminUI",
   });
-
-  throwIfError(error, "No se pudo registrar accion de auditoria");
 }
 
 export async function createImportJob(input: {
@@ -1565,18 +2616,16 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     activeOffersResult,
     activeMerchantsResult,
     totalClicksResult,
-    clicksResult,
     topSearchTermsResult,
-    topViewedProductsResult,
+    analyticsSnapshotResult,
     syncStatus,
   ] = await Promise.all([
     supabase.from("products").select("id", { count: "exact", head: true }),
     supabase.from("offers").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("merchants").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("clicks").select("id", { count: "exact", head: true }),
-    supabase.from("clicks").select("product_id,merchant_id,created_at").order("created_at", { ascending: false }).limit(2000),
     supabase.from("search_terms").select("term,count").order("count", { ascending: false }).limit(10),
-    supabase.from("products").select("id,name,search_count").order("search_count", { ascending: false }).limit(10),
+    supabase.rpc("get_admin_analytics_snapshot", { p_days: 30, p_stale_offer_days: 14 }),
     listSyncStatus(),
   ]);
 
@@ -1584,68 +2633,27 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   throwIfError(activeOffersResult.error, "No se pudo contar ofertas activas");
   throwIfError(activeMerchantsResult.error, "No se pudo contar tiendas activas");
   throwIfError(totalClicksResult.error, "No se pudo contar clics");
-  throwIfError(clicksResult.error, "No se pudieron cargar clics para analitica");
   throwIfError(topSearchTermsResult.error, "No se pudieron cargar terminos de busqueda");
-  throwIfError(topViewedProductsResult.error, "No se pudieron cargar productos vistos");
+  throwIfError(analyticsSnapshotResult.error, "No se pudo cargar snapshot de analitica admin");
 
-  const clickRows = clicksResult.data || [];
-  const productClickCount = new Map<string, number>();
-  const merchantClickCount = new Map<string, number>();
+  const snapshot = (analyticsSnapshotResult.data || {}) as DashboardAnalyticsSnapshot;
 
-  for (const row of clickRows) {
-    const productId = String(row.product_id || "");
-    const merchantId = String(row.merchant_id || "");
-
-    if (productId) {
-      productClickCount.set(productId, (productClickCount.get(productId) || 0) + 1);
-    }
-
-    if (merchantId) {
-      merchantClickCount.set(merchantId, (merchantClickCount.get(merchantId) || 0) + 1);
-    }
-  }
-
-  const productIds = Array.from(productClickCount.keys());
-  const merchantIds = Array.from(merchantClickCount.keys());
-
-  const [productNamesResult, merchantNamesResult] = await Promise.all([
-    productIds.length
-      ? supabase.from("products").select("id,name").in("id", productIds)
-      : Promise.resolve({ data: [], error: null } as const),
-    merchantIds.length
-      ? supabase.from("merchants").select("id,name").in("id", merchantIds)
-      : Promise.resolve({ data: [], error: null } as const),
-  ]);
-
-  throwIfError(productNamesResult.error, "No se pudieron cargar nombres de productos para analitica");
-  throwIfError(merchantNamesResult.error, "No se pudieron cargar nombres de tiendas para analitica");
-
-  const productNameMap = new Map<string, string>();
-  for (const row of productNamesResult.data || []) {
-    productNameMap.set(String(row.id), String(row.name));
-  }
-
-  const merchantNameMap = new Map<string, string>();
-  for (const row of merchantNamesResult.data || []) {
-    merchantNameMap.set(String(row.id), String(row.name));
-  }
-
-  const topClickedProducts = Array.from(productClickCount.entries())
-    .map(([productId, clicks]) => ({
-      productId,
-      productName: productNameMap.get(productId) || "Producto",
-      clicks,
+  const topClickedProducts = (snapshot.topClickedProducts || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      clicks: Number(row.clicks || 0),
     }))
-    .sort((a, b) => b.clicks - a.clicks)
+    .filter((row) => Boolean(row.productId))
     .slice(0, 10);
 
-  const topClickedMerchants = Array.from(merchantClickCount.entries())
-    .map(([merchantId, clicks]) => ({
-      merchantId,
-      merchantName: merchantNameMap.get(merchantId) || "Tienda",
-      clicks,
+  const topClickedMerchants = (snapshot.topClickedMerchants || [])
+    .map((row) => ({
+      merchantId: String(row.merchantId || ""),
+      merchantName: String(row.merchantName || "Tienda"),
+      clicks: Number(row.clicks || 0),
     }))
-    .sort((a, b) => b.clicks - a.clicks)
+    .filter((row) => Boolean(row.merchantId))
     .slice(0, 10);
 
   const topSearchTerms = (topSearchTermsResult.data || []).map((row) => ({
@@ -1653,11 +2661,119 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     count: Number(row.count || 0),
   }));
 
-  const topViewedProducts = (topViewedProductsResult.data || []).map((row) => ({
-    productId: String(row.id),
-    productName: String(row.name || ""),
-    views: Number(row.search_count || 0),
+  const topViewedProducts = (snapshot.topViewedProducts || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const topSearchedProducts = (snapshot.topSearchedProducts || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      searchCount: Number(row.searchCount || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const topOfferPairs = (snapshot.topOfferPairs || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      merchantId: String(row.merchantId || ""),
+      merchantName: String(row.merchantName || "Tienda"),
+      clicks: Number(row.clicks || 0),
+    }))
+    .filter((row) => Boolean(row.productId) && Boolean(row.merchantId))
+    .slice(0, 10);
+
+  const topCategoriesByClicks = (snapshot.topCategoriesByClicks || [])
+    .map((row) => ({
+      categoryId: String(row.categoryId || ""),
+      categoryName: String(row.categoryName || "Categoria"),
+      clicks: Number(row.clicks || 0),
+    }))
+    .filter((row) => Boolean(row.categoryId))
+    .slice(0, 10);
+
+  const topCategoriesByPerformance = (snapshot.topCategoriesByPerformance || [])
+    .map((row) => ({
+      categoryId: String(row.categoryId || ""),
+      categoryName: String(row.categoryName || "Categoria"),
+      clicks: Number(row.clicks || 0),
+      views: Number(row.views || 0),
+      ctr: typeof row.ctr === "number" ? row.ctr : 0,
+    }))
+    .filter((row) => Boolean(row.categoryId))
+    .slice(0, 10);
+
+  const noResultSearchTerms = (snapshot.noResultSearchTerms || [])
+    .map((row) => ({
+      term: String(row.term || ""),
+      count: Number(row.count || 0),
+    }))
+    .filter((row) => Boolean(row.term))
+    .slice(0, 10);
+
+  const highClicksLowViews = (snapshot.highClicksLowViews || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      clicks: Number(row.clicks || 0),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const highViewsLowClicks = (snapshot.highViewsLowClicks || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      clicks: Number(row.clicks || 0),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const underFeaturedTopPerformers = (snapshot.underFeaturedTopPerformers || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      clicks: Number(row.clicks || 0),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const featuredTopPerformers = (snapshot.featuredTopPerformers || [])
+    .map((row) => ({
+      productId: String(row.productId || ""),
+      productName: String(row.productName || "Producto"),
+      clicks: Number(row.clicks || 0),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.productId))
+    .slice(0, 10);
+
+  const recentAdminActions = (snapshot.recentAdminActions || []).map((row) => ({
+    id: String(row.id || ""),
+    userId: String(row.userId || ""),
+    action: String(row.action || ""),
+    entityType: String(row.entityType || ""),
+    entityId: row.entityId ? String(row.entityId) : undefined,
+    payload: {},
+    createdAt: String(row.createdAt || new Date().toISOString()),
   }));
+
+  const dailyClicks = (snapshot.dailyClicks || [])
+    .map((row) => ({
+      day: String(row.day || ""),
+      clicks: Number(row.clicks || 0),
+    }))
+    .filter((row) => Boolean(row.day));
 
   const activeProducts = await supabase.from("products").select("id").eq("is_active", true);
   throwIfError(activeProducts.error, "No se pudieron cargar productos activos");
@@ -1690,10 +2806,38 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     activeOffers: activeOffersResult.count || 0,
     activeMerchants: activeMerchantsResult.count || 0,
     totalClicks: totalClicksResult.count || 0,
+    clicksLast30Days: Number(snapshot.clicksLast30Days || 0),
     topClickedProducts,
     topClickedMerchants,
+    topOfferPairs,
     topSearchTerms,
+    noResultSearchTerms,
     topViewedProducts,
+    topSearchedProducts,
+    topCategoriesByClicks,
+    topCategoriesByPerformance,
+    searchesWithoutResults: Number(snapshot.searchesWithoutResults || 0),
+    failedImportJobs: Number(snapshot.failedImportJobs || 0),
+    productsWithoutActiveOffers: Number(snapshot.productsWithoutActiveOffers || 0),
+    staleActiveOffers: Number(snapshot.staleActiveOffers || 0),
+    highClicksLowViews,
+    highViewsLowClicks,
+    underFeaturedTopPerformers,
+    featuredTopPerformers,
+    favoritesTotal:
+      typeof snapshot.favoritesTotal === "number" && Number.isFinite(snapshot.favoritesTotal)
+        ? Number(snapshot.favoritesTotal)
+        : null,
+    recentAdminActions,
+    freshness: {
+      lastClickAt: snapshot.freshness?.lastClickAt || undefined,
+      lastSearchAt: snapshot.freshness?.lastSearchAt || undefined,
+      lastImportAt: snapshot.freshness?.lastImportAt || undefined,
+      lastSyncAt: snapshot.freshness?.lastSyncAt || undefined,
+      stale: Boolean(snapshot.freshness?.stale),
+      staleSources: Number(snapshot.freshness?.staleSources || 0),
+    },
+    dailyClicks,
     incompleteProducts,
     syncStatus,
   };

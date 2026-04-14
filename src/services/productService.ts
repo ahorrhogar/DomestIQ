@@ -1,10 +1,8 @@
 import { buildAssistantRecommendations } from "@/domain/assistant/recommendation";
+import { computeHomeCollections, type HomeCollections } from "@/domain/catalog/home-ranking";
 import {
   filterProducts,
-  getDealProducts,
   getRelatedProducts,
-  getTopRatedProducts,
-  getTrendingProducts,
   sortProducts,
 } from "@/domain/catalog/product-logic";
 import type {
@@ -15,6 +13,7 @@ import type {
   ProductFilters,
   ProductSortBy,
 } from "@/domain/catalog/types";
+import type { CatalogRankingSignals } from "@/data/sources/catalogSource.types";
 import { mockCatalogSource } from "@/data/sources/mockCatalogSource";
 
 export interface ProductSearchOptions {
@@ -30,15 +29,35 @@ export interface ProductService {
   getProductsByCategory(categoryId?: string, subcategoryId?: string): Product[];
   getFilterMetadata(products: Product[]): ProductFilterMetadata;
   getFilteredProducts(filters: ProductFilters, sortBy: ProductSortBy): Product[];
+  getTopProducts(limit?: number): Product[];
   getTrendingProducts(limit?: number): Product[];
   getDealProducts(limit?: number): Product[];
   getTopRatedProducts(limit?: number): Product[];
   getFeaturedProducts(limit?: number): Product[];
   getBestSellers(limit?: number): Product[];
+  getFavoriteProducts(limit?: number): Product[];
   getRelatedProducts(product: Product, limit?: number): Product[];
   searchProducts(query: string, options?: ProductSearchOptions): Promise<Product[]>;
   getAssistantRecommendations(query: AssistantQuery, limit?: number): AssistantResult[];
 }
+
+interface HomeCollectionsCacheEntry {
+  key: string;
+  expiresAt: number;
+  value: HomeCollections;
+}
+
+const HOME_COLLECTIONS_CACHE_TTL_MS = 60_000;
+
+const EMPTY_SIGNALS: CatalogRankingSignals = {
+  clicksByProductId: {},
+  outboundClicksByProductId: {},
+  viewsByProductId: {},
+  favoritesByProductId: {},
+  hasViewSignals: false,
+  hasFavoriteSignals: false,
+  updatedAt: "",
+};
 
 function sortedUnique(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b));
@@ -191,6 +210,62 @@ function searchProductsLocally(products: Product[], query: string, lookup: Searc
 }
 
 class MockProductService implements ProductService {
+  private homeCollectionsCache: HomeCollectionsCacheEntry | null = null;
+
+  private getRankingSignals(): CatalogRankingSignals {
+    if (!mockCatalogSource.getRankingSignals) {
+      return EMPTY_SIGNALS;
+    }
+
+    return mockCatalogSource.getRankingSignals();
+  }
+
+  private getHomeCollections(): HomeCollections {
+    const products = this.getAllProducts();
+    const rankingSignals = this.getRankingSignals();
+    const cacheKey = `${products.length}:${rankingSignals.updatedAt}`;
+    const now = Date.now();
+
+    if (
+      this.homeCollectionsCache &&
+      this.homeCollectionsCache.key === cacheKey &&
+      this.homeCollectionsCache.expiresAt > now
+    ) {
+      return this.homeCollectionsCache.value;
+    }
+
+    const offersByProductId = new Map(products.map((product) => [product.id, mockCatalogSource.getOffersForProduct(product.id)]));
+
+    const value = computeHomeCollections(
+      {
+        products,
+        offersByProductId,
+        signals: {
+          clicksByProductId: rankingSignals.clicksByProductId,
+          outboundClicksByProductId: rankingSignals.outboundClicksByProductId,
+          viewsByProductId: rankingSignals.viewsByProductId,
+          favoritesByProductId: rankingSignals.favoritesByProductId,
+        },
+      },
+      {
+        topProducts: 18,
+        bestDeals: 12,
+        topRatedProducts: 12,
+        bestSellers: 12,
+        favoriteProducts: 12,
+        featuredProducts: 12,
+      },
+    );
+
+    this.homeCollectionsCache = {
+      key: cacheKey,
+      expiresAt: now + HOME_COLLECTIONS_CACHE_TTL_MS,
+      value,
+    };
+
+    return value;
+  }
+
   getAllProducts(): Product[] {
     return mockCatalogSource.getProducts();
   }
@@ -242,24 +317,32 @@ class MockProductService implements ProductService {
     return sortProducts(merchantFiltered, sortBy);
   }
 
+  getTopProducts(limit = 6): Product[] {
+    return this.getHomeCollections().topProducts.slice(0, limit);
+  }
+
   getTrendingProducts(limit = 6): Product[] {
-    return getTrendingProducts(this.getAllProducts(), limit);
+    return this.getTopProducts(limit);
   }
 
   getDealProducts(limit = 4): Product[] {
-    return getDealProducts(this.getAllProducts(), limit);
+    return this.getHomeCollections().bestDeals.slice(0, limit);
   }
 
   getTopRatedProducts(limit = 4): Product[] {
-    return getTopRatedProducts(this.getAllProducts(), limit);
+    return this.getHomeCollections().topRatedProducts.slice(0, limit);
   }
 
   getFeaturedProducts(limit = 4): Product[] {
-    return mockCatalogSource.getFeaturedProducts().slice(0, limit);
+    return this.getHomeCollections().featuredProducts.slice(0, limit);
   }
 
   getBestSellers(limit = 4): Product[] {
-    return mockCatalogSource.getBestSellers().slice(0, limit);
+    return this.getHomeCollections().bestSellers.slice(0, limit);
+  }
+
+  getFavoriteProducts(limit = 4): Product[] {
+    return this.getHomeCollections().favoriteProducts.slice(0, limit);
   }
 
   getRelatedProducts(product: Product, limit = 4): Product[] {

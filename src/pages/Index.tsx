@@ -10,14 +10,30 @@ import { analyticsService, productService } from '@/services';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react';
-import { useMemo, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const Index = () => {
-  const trending = useMemo(() => productService.getTrendingProducts(6), []);
-  const deals = useMemo(() => productService.getDealProducts(4), []);
-  const topRated = useMemo(() => productService.getTopRatedProducts(4), []);
-  const bestSellers = useMemo(() => productService.getBestSellers(4), []);
-  const featuredProducts = useMemo(() => productService.getFeaturedProducts(4), []);
+  const [homeCollections, setHomeCollections] = useState(() => ({
+    topProducts: productService.getTopProducts(6),
+    deals: productService.getDealProducts(4),
+    topRated: productService.getTopRatedProducts(4),
+    bestSellers: productService.getBestSellers(4),
+    favoriteProducts: productService.getFavoriteProducts(4),
+    featuredProducts: productService.getFeaturedProducts(4),
+  }));
+
+  const refreshHomeCollections = useCallback(() => {
+    setHomeCollections({
+      topProducts: productService.getTopProducts(6),
+      deals: productService.getDealProducts(4),
+      topRated: productService.getTopRatedProducts(4),
+      bestSellers: productService.getBestSellers(4),
+      favoriteProducts: productService.getFavoriteProducts(4),
+      featuredProducts: productService.getFeaturedProducts(4),
+    });
+  }, []);
+
+  const { topProducts, deals, topRated, bestSellers, favoriteProducts, featuredProducts } = homeCollections;
 
   useEffect(() => {
     analyticsService.track({
@@ -26,6 +42,16 @@ const Index = () => {
       payload: { page: 'home' },
     });
   }, []);
+
+  useEffect(() => {
+    refreshHomeCollections();
+
+    const intervalId = window.setInterval(() => {
+      refreshHomeCollections();
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [refreshHomeCollections]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -37,49 +63,51 @@ const Index = () => {
         <TrendingCategories />
 
         {/* Trending Products - immediately visible */}
-        <section className="py-8">
-          <div className="container mx-auto px-4">
-            <div className="flex items-end justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-accent" />
-                <h2 className="font-display text-xl md:text-2xl font-bold text-foreground">Top productos</h2>
+        {topProducts.length > 0 ? (
+          <section className="py-8">
+            <div className="container mx-auto px-4">
+              <div className="flex items-end justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-accent" />
+                  <h2 className="font-display text-xl md:text-2xl font-bold text-foreground">Top productos</h2>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {topProducts.map((p) => {
+                  const realDiscount = computeDiscountPercent(p);
+                  return (
+                    <Link key={p.id} to={`/producto/${p.slug}`} className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300">
+                      {realDiscount ? (
+                        <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-deal text-deal-foreground">
+                          -{realDiscount}%
+                        </span>
+                      ) : null}
+                      <div className="aspect-square rounded-lg overflow-hidden bg-secondary/50 mb-2">
+                        <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">{p.brand}</p>
+                      <h3 className="text-xs font-medium text-foreground line-clamp-2 leading-tight mt-0.5">{p.name}</h3>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Star className="w-3 h-3 fill-accent text-accent" />
+                        <span className="text-xs font-medium">{p.rating}</span>
+                        <span className="text-[10px] text-muted-foreground">({p.reviewCount})</span>
+                      </div>
+                      <div className="mt-1">
+                        <span className="text-xs text-muted-foreground">desde </span>
+                        <span className="text-sm font-bold text-foreground">{p.minPrice.toFixed(2).replace('.', ',')} €</span>
+                      </div>
+                      {p.originalPrice && p.originalPrice > p.minPrice ? (
+                        <p className="text-xs text-muted-foreground line-through mt-0.5">
+                          {p.originalPrice.toFixed(2).replace('.', ',')} €
+                        </p>
+                      ) : null}
+                    </Link>
+                  );
+                })}
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {trending.map((p) => {
-                const realDiscount = computeDiscountPercent(p);
-                return (
-                  <Link key={p.id} to={`/producto/${p.slug}`} className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300">
-                    {realDiscount ? (
-                      <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-deal text-deal-foreground">
-                        -{realDiscount}%
-                      </span>
-                    ) : null}
-                    <div className="aspect-square rounded-lg overflow-hidden bg-secondary/50 mb-2">
-                      <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-                    </div>
-                    <p className="text-xs text-muted-foreground">{p.brand}</p>
-                    <h3 className="text-xs font-medium text-foreground line-clamp-2 leading-tight mt-0.5">{p.name}</h3>
-                    <div className="flex items-center gap-1 mt-1">
-                      <Star className="w-3 h-3 fill-accent text-accent" />
-                      <span className="text-xs font-medium">{p.rating}</span>
-                      <span className="text-[10px] text-muted-foreground">({p.reviewCount})</span>
-                    </div>
-                    <div className="mt-1">
-                      <span className="text-xs text-muted-foreground">desde </span>
-                      <span className="text-sm font-bold text-foreground">{p.minPrice.toFixed(2).replace('.', ',')} €</span>
-                    </div>
-                    {p.originalPrice && p.originalPrice > p.minPrice ? (
-                      <p className="text-xs text-muted-foreground line-through mt-0.5">
-                        {p.originalPrice.toFixed(2).replace('.', ',')} €
-                      </p>
-                    ) : null}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         {/* Promo banners row */}
         <section className="py-4">
@@ -113,7 +141,14 @@ const Index = () => {
         <TrustBlock />
 
         {/* Top Rated */}
-        <ProductGrid products={topRated} title="⭐ Mejor valorados" subtitle="Los productos con mejores opiniones de nuestros usuarios" showAll="/categoria/muebles" />
+        {topRated.length > 0 ? (
+          <ProductGrid
+            products={topRated}
+            title="⭐ Mejor valorados"
+            subtitle="Los productos con mejores opiniones de nuestros usuarios"
+            showAll="/categoria/muebles"
+          />
+        ) : null}
 
         {/* Lifestyle promo banner - full width */}
         <section className="py-4">
@@ -151,7 +186,18 @@ const Index = () => {
           </div>
         </section>
 
-        <ProductGrid products={bestSellers} title="🏆 Los más vendidos" subtitle="Productos favoritos de nuestros usuarios" showAll="/categoria/muebles" />
+        {bestSellers.length > 0 ? (
+          <ProductGrid products={bestSellers} title="🏆 Los más vendidos" subtitle="Productos con mayor traccion de usuarios" showAll="/categoria/muebles" />
+        ) : null}
+
+        {favoriteProducts.length > 0 ? (
+          <ProductGrid
+            products={favoriteProducts}
+            title="❤️ Favoritos de usuarios"
+            subtitle="Los productos mas guardados y recomendados"
+            showAll="/categoria/muebles"
+          />
+        ) : null}
 
         {/* Assistant CTA */}
         <section className="py-14">
@@ -176,7 +222,9 @@ const Index = () => {
           </div>
         </section>
 
-        <ProductGrid products={featuredProducts} title="💎 Productos destacados" subtitle="Seleccionados por nuestro equipo" />
+        {featuredProducts.length > 0 ? (
+          <ProductGrid products={featuredProducts} title="💎 Productos destacados" subtitle="Seleccionados por el equipo editorial" />
+        ) : null}
         <SEOContent />
       </main>
       <Footer />

@@ -9,6 +9,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { analyticsService, categoryService, offerService, productService } from '@/services';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import type { Merchant } from '@/domain/catalog/types';
+import { extractDomainFromAffiliateUrl, isAffiliateUrlAllowed } from '@/infrastructure/security/affiliateUrl';
+import { toast } from 'sonner';
 
 const MerchantLogo = ({ merchant }: { merchant: Merchant }) => {
   const [imageError, setImageError] = useState(false);
@@ -90,6 +92,11 @@ const ProductPage = () => {
   ];
 
   const visibleSpecs = showAllSpecs ? product.specs : product.specs.slice(0, 4);
+
+  const isOfferDirectUrlSafe = (offerUrl: string, merchantUrl: string): boolean => {
+    const merchantDomain = extractDomainFromAffiliateUrl(merchantUrl);
+    return isAffiliateUrlAllowed(offerUrl, merchantDomain || undefined);
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -201,7 +208,15 @@ const ProductPage = () => {
               <Tag className="w-5 h-5 text-accent" /> Comparar ofertas ({offers.length} tiendas)
             </h3>
             <div className="space-y-3">
-              {offers.map((offer, i) => (
+              {offers.map((offer, i) => {
+                const directUrlSafe = isOfferDirectUrlSafe(offer.url, offer.merchant.url);
+                const finalHref = useRedirectApi
+                  ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}`
+                  : directUrlSafe
+                    ? offer.url
+                    : "#";
+
+                return (
                 <div key={offer.id} className={`group flex flex-col md:flex-row md:items-center justify-between p-4 md:p-5 rounded-xl border transition-all hover:shadow-card ${
                   i === 0 ? 'border-deal bg-deal/5 shadow-sm' : 'border-border bg-card hover:border-accent/30'
                 } gap-4`}>
@@ -259,14 +274,16 @@ const ProductPage = () => {
                     </div>
 
                     <a
-                      href={
-                        useRedirectApi
-                          ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}`
-                          : offer.url
-                      }
+                      href={finalHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={() => {
+                      onClick={(event) => {
+                        if (!useRedirectApi && !directUrlSafe) {
+                          event.preventDefault();
+                          toast.error('La oferta tiene un enlace invalido para esta tienda y fue bloqueada por seguridad');
+                          return;
+                        }
+
                         analyticsService.track({
                           name: 'offer_click',
                           timestamp: new Date().toISOString(),
@@ -291,7 +308,8 @@ const ProductPage = () => {
                     </a>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
