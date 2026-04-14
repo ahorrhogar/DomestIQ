@@ -84,12 +84,75 @@ export interface CategoryMutationInput {
   isActive: boolean;
 }
 
+interface SupabaseLikeError {
+  message?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+}
+
+interface RateLimitRpcResult {
+  allowed?: boolean;
+  reason?: string;
+  remaining?: number;
+  resetAt?: string;
+  blockedUntil?: string;
+}
+
+const ADMIN_RATE_LIMIT_POLICIES = {
+  productWrite: { scope: "admin:product:write", maxRequests: 60, windowSeconds: 60, blockSeconds: 180 },
+  productDelete: { scope: "admin:product:delete", maxRequests: 20, windowSeconds: 60, blockSeconds: 300 },
+  offerWrite: { scope: "admin:offer:write", maxRequests: 100, windowSeconds: 60, blockSeconds: 180 },
+  offerDelete: { scope: "admin:offer:delete", maxRequests: 30, windowSeconds: 60, blockSeconds: 300 },
+  imageUpload: { scope: "admin:image:upload", maxRequests: 30, windowSeconds: 60, blockSeconds: 300 },
+  csvImport: { scope: "admin:import:csv", maxRequests: 6, windowSeconds: 60, blockSeconds: 600 },
+} as const;
+
+export type AdminRateLimitScope = keyof typeof ADMIN_RATE_LIMIT_POLICIES;
+
 function normalizeSlug(value: string): string {
   return sanitizeText(value.toLowerCase(), 120)
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function sanitizeHttpUrl(value: string, maxLength = 400): string {
+  const safeValue = sanitizeText(value, maxLength);
+  if (!safeValue) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(safeValue);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function sanitizeDomainValue(value: string): string {
+  const safeValue = sanitizeText(value.toLowerCase(), 200);
+  if (!safeValue) {
+    return "";
+  }
+
+  const withoutProtocol = safeValue
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
+    .trim();
+
+  const domainPattern = /^[a-z0-9.-]+$/;
+  if (!domainPattern.test(withoutProtocol) || !withoutProtocol.includes(".")) {
+    return "";
+  }
+
+  return withoutProtocol;
 }
 
 function parseSpecsObject(value: unknown): Record<string, unknown> {
@@ -147,12 +210,94 @@ function toTechnicalSpecObject(rows: Array<{ label: string; value: string }> = [
   }, {});
 }
 
-function throwIfError(error: { message?: string } | null, fallback: string): never | void {
+export function mapAdminErrorMessage(error: SupabaseLikeError | null | undefined, fallback: string): string {
+  if (!error) {
+    return fallback;
+  }
+
+  const raw = [error.message, error.details, error.hint, error.code].filter(Boolean).join(" | ").toLowerCase();
+
+  if (raw.includes("import_batch_failed")) {
+    return "La importacion fallo y se revirtio por completo. Revisa los errores por fila en el job.";
+  }
+
+  if (raw.includes("rate") && raw.includes("limit")) {
+    return "Se alcanzo el limite temporal de operaciones. Intenta de nuevo en unos minutos.";
+  }
+
+  if (raw.includes("user_limit") || raw.includes("user_blocked") || raw.includes("ip_limit") || raw.includes("ip_blocked")) {
+    return "Operacion bloqueada temporalmente por seguridad. Espera unos minutos antes de reintentar.";
+  }
+
+  if ((raw.includes("duplicate key") && (raw.includes("products") || raw.includes("slug"))) || raw.includes("idx_products_slug_unique") || raw.includes("products_slug")) {
+    return "Producto duplicado: ya existe un producto con el mismo slug.";
+  }
+
+  if ((raw.includes("duplicate key") && raw.includes("brands")) || raw.includes("idx_brands_name_unique_lower")) {
+    return "Marca duplicada: ya existe una marca con ese nombre.";
+  }
+
+  if ((raw.includes("duplicate key") && raw.includes("merchants")) || raw.includes("idx_merchants_name_unique")) {
+    return "Tienda duplicada: ya existe una tienda con ese nombre.";
+  }
+
+  if (raw.includes("genera un ciclo") || raw.includes("categoria no puede ser su propio padre")) {
+    return "No se puede guardar la categoria porque se genera un ciclo en la jerarquia.";
+  }
+
+  if (raw.includes("violates foreign key constraint") && raw.includes("offers")) {
+    return "No se puede borrar porque tiene ofertas asociadas.";
+  }
+
+  if (raw.includes("violates foreign key constraint") && raw.includes("products")) {
+    return "No se puede borrar porque tiene productos asociados.";
+  }
+
+  if (raw.includes("product-images") && (raw.includes("mimetype") || raw.includes("size") || raw.includes("formato"))) {
+    return "La imagen no cumple las politicas de seguridad (tipo o tamano invalido).";
+  }
+
+  return error.message || fallback;
+}
+
+async function enforceAdminRateLimit(scope: AdminRateLimitScope): Promise<void> {
+  const supabase = getSupabaseClient();
+  const policy = ADMIN_RATE_LIMIT_POLICIES[scope];
+
+  const { data, error } = await supabase.rpc("check_admin_rate_limit", {
+    p_scope: policy.scope,
+    p_max_requests: policy.maxRequests,
+    p_window_seconds: policy.windowSeconds,
+    p_block_seconds: policy.blockSeconds,
+  });
+
+  if (error) {
+    throw new Error(mapAdminErrorMessage(error, "No se pudo validar limites de seguridad para la operacion"));
+  }
+
+  const rateResult = (data || {}) as RateLimitRpcResult;
+  if (rateResult.allowed) {
+    return;
+  }
+
+  const resetText = rateResult.resetAt ? new Date(rateResult.resetAt).toLocaleTimeString("es-ES") : null;
+  const message = resetText
+    ? `Operacion bloqueada temporalmente por rate limiting. Intenta de nuevo despues de ${resetText}.`
+    : "Operacion bloqueada temporalmente por rate limiting. Intenta de nuevo en unos minutos.";
+
+  throw new Error(message);
+}
+
+export async function requireAdminRateLimit(scope: AdminRateLimitScope): Promise<void> {
+  await enforceAdminRateLimit(scope);
+}
+
+function throwIfError(error: SupabaseLikeError | null, fallback: string): never | void {
   if (!error) {
     return;
   }
 
-  throw new Error(error.message || fallback);
+  throw new Error(mapAdminErrorMessage(error, fallback));
 }
 
 function asBoolean(value: unknown): boolean {
@@ -244,14 +389,19 @@ export async function listBrands(): Promise<AdminBrandRecord[]> {
 export async function upsertBrand(input: BrandMutationInput): Promise<AdminBrandRecord> {
   const supabase = getSupabaseClient();
   const name = sanitizeText(input.name, 120);
+  const safeLogoUrl = input.logoUrl ? sanitizeHttpUrl(input.logoUrl, 300) : "";
 
   if (!name) {
     throw new Error("La marca requiere nombre");
   }
 
+  if (input.logoUrl && !safeLogoUrl) {
+    throw new Error("La marca requiere una URL de logo valida (http/https)");
+  }
+
   const payload = {
     name,
-    logo_url: input.logoUrl ? sanitizeText(input.logoUrl, 300) : null,
+    logo_url: safeLogoUrl || null,
     is_active: Boolean(input.isActive),
   };
 
@@ -322,15 +472,25 @@ export async function listMerchants(): Promise<AdminMerchantRecord[]> {
 export async function upsertMerchant(input: MerchantMutationInput): Promise<AdminMerchantRecord> {
   const supabase = getSupabaseClient();
   const name = sanitizeText(input.name, 120);
+  const safeLogoUrl = input.logoUrl ? sanitizeHttpUrl(input.logoUrl, 300) : "";
+  const safeDomain = input.domain ? sanitizeDomainValue(input.domain) : "";
 
   if (!name) {
     throw new Error("La tienda requiere nombre");
   }
 
+  if (input.logoUrl && !safeLogoUrl) {
+    throw new Error("La tienda requiere una URL de logo valida (http/https)");
+  }
+
+  if (input.domain && !safeDomain) {
+    throw new Error("La tienda requiere un dominio valido (ejemplo.com)");
+  }
+
   const payload = {
     name,
-    logo_url: input.logoUrl ? sanitizeText(input.logoUrl, 300) : null,
-    domain: input.domain ? sanitizeText(input.domain, 200) : null,
+    logo_url: safeLogoUrl || null,
+    domain: safeDomain || null,
     country: sanitizeText(input.country || "ES", 8),
     is_active: Boolean(input.isActive),
     brand_color: input.brandColor ? sanitizeText(input.brandColor, 30) : null,
@@ -415,9 +575,33 @@ export async function listCategories(): Promise<AdminCategoryRecord[]> {
 export async function upsertCategory(input: CategoryMutationInput): Promise<AdminCategoryRecord> {
   const supabase = getSupabaseClient();
   const name = sanitizeText(input.name, 120);
+  const safeImageUrl = input.imageUrl ? sanitizeHttpUrl(input.imageUrl, 300) : "";
 
   if (!name) {
     throw new Error("La categoria requiere nombre");
+  }
+
+  if (input.id && input.parentId === input.id) {
+    throw new Error("Una categoria no puede ser su propia categoria padre");
+  }
+
+  if (input.id && input.parentId) {
+    const cycleCheck = await supabase.rpc("category_parent_would_create_cycle", {
+      p_category_id: input.id,
+      p_parent_id: input.parentId,
+    });
+
+    if (cycleCheck.error) {
+      throw new Error(cycleCheck.error.message || "No se pudo validar jerarquia de categorias");
+    }
+
+    if (cycleCheck.data) {
+      throw new Error("No se puede guardar la categoria porque se genera un ciclo en la jerarquia");
+    }
+  }
+
+  if (input.imageUrl && !safeImageUrl) {
+    throw new Error("La categoria requiere una URL de imagen valida (http/https)");
   }
 
   const slug = normalizeSlug(input.slug || name);
@@ -427,7 +611,7 @@ export async function upsertCategory(input: CategoryMutationInput): Promise<Admi
     slug,
     parent_id: input.parentId || null,
     icon: input.icon ? sanitizeText(input.icon, 32) : null,
-    image_url: input.imageUrl ? sanitizeText(input.imageUrl, 300) : null,
+    image_url: safeImageUrl || null,
     sort_order: sanitizeNumber(Number(input.sortOrder || 0), 0, 100000),
     is_active: Boolean(input.isActive),
   };
@@ -654,6 +838,7 @@ export async function getProductById(id: string): Promise<AdminProductRecord | n
 }
 
 export async function upsertProduct(input: ProductMutationInput): Promise<AdminProductRecord> {
+  await enforceAdminRateLimit("productWrite");
   const supabase = getSupabaseClient();
   const name = sanitizeText(input.name, 180);
   const slug = normalizeSlug(input.slug || name);
@@ -786,9 +971,34 @@ export async function duplicateProduct(productId: string): Promise<AdminProductR
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  await enforceAdminRateLimit("productDelete");
   const supabase = getSupabaseClient();
   const { error } = await supabase.from("products").delete().eq("id", id);
   throwIfError(error, "No se pudo eliminar el producto");
+}
+
+export async function listProductsForSelect(search: string, limit = 25): Promise<Array<{ id: string; name: string }>> {
+  const supabase = getSupabaseClient();
+  const safeSearch = sanitizeText(search || "", 80);
+  const safeLimit = Math.max(1, Math.min(limit, 50));
+
+  let query = supabase
+    .from("products")
+    .select("id,name")
+    .order("name", { ascending: true })
+    .limit(safeLimit);
+
+  if (safeSearch) {
+    query = query.ilike("name", `%${safeSearch}%`);
+  }
+
+  const { data, error } = await query;
+  throwIfError(error, "No se pudieron cargar productos para el selector");
+
+  return (data || []).map((row) => ({
+    id: String(row.id),
+    name: String(row.name || ""),
+  }));
 }
 
 export async function listProductImages(productId: string): Promise<AdminProductImageRecord[]> {
@@ -797,7 +1007,7 @@ export async function listProductImages(productId: string): Promise<AdminProduct
     .from("product_images")
     .select("id,product_id,url,is_primary")
     .eq("product_id", productId)
-    .order("created_at", { ascending: true });
+    .order("id", { ascending: true });
 
   throwIfError(error, "No se pudieron cargar imagenes");
 
@@ -810,11 +1020,12 @@ export async function listProductImages(productId: string): Promise<AdminProduct
 }
 
 export async function addProductImage(productId: string, url: string, isPrimary: boolean): Promise<AdminProductImageRecord> {
+  await enforceAdminRateLimit("imageUpload");
   const supabase = getSupabaseClient();
-  const safeUrl = sanitizeText(url, 400);
+  const safeUrl = sanitizeHttpUrl(url, 400);
 
   if (!safeUrl) {
-    throw new Error("La imagen requiere URL");
+    throw new Error("La imagen requiere una URL valida (http/https)");
   }
 
   if (isPrimary) {
@@ -857,7 +1068,19 @@ export async function deleteProductImage(imageId: string): Promise<void> {
 }
 
 export async function uploadProductImage(productId: string, file: File, isPrimary: boolean): Promise<AdminProductImageRecord> {
+  await enforceAdminRateLimit("imageUpload");
   const supabase = getSupabaseClient();
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const maxFileSizeBytes = 10 * 1024 * 1024;
+
+  if (!allowedTypes.has(file.type)) {
+    throw new Error("Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF");
+  }
+
+  if (file.size > maxFileSizeBytes) {
+    throw new Error("La imagen supera el limite de 10MB");
+  }
+
   const extension = file.name.includes(".") ? file.name.split(".").pop() || "jpg" : "jpg";
   const fileName = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}.${sanitizeText(extension, 10)}`;
   const filePath = `${productId}/${fileName}`;
@@ -945,6 +1168,7 @@ export async function listOffers(filters: OfferListFilters): Promise<{ rows: Adm
 }
 
 export async function upsertOffer(input: OfferMutationInput): Promise<AdminOfferRecord> {
+  await enforceAdminRateLimit("offerWrite");
   const supabase = getSupabaseClient();
 
   if (!input.productId || !input.merchantId) {
@@ -955,21 +1179,26 @@ export async function upsertOffer(input: OfferMutationInput): Promise<AdminOffer
   const oldPrice = typeof input.oldPrice === "number" && Number.isFinite(input.oldPrice)
     ? sanitizeNumber(Number(input.oldPrice), 0, 1_000_000)
     : null;
+  const safeUrl = sanitizeHttpUrl(input.url, 400);
+
+  if (price <= 0) {
+    throw new Error("La oferta requiere un precio mayor que 0");
+  }
+
+  if (!safeUrl) {
+    throw new Error("La oferta requiere una URL valida (http/https)");
+  }
 
   const payload = {
     product_id: input.productId,
     merchant_id: input.merchantId,
     price,
     old_price: oldPrice,
-    url: sanitizeText(input.url, 400),
+    url: safeUrl,
     stock: Boolean(input.stock),
     is_active: Boolean(input.isActive),
     is_featured: Boolean(input.isFeatured),
   };
-
-  if (!payload.url) {
-    throw new Error("La oferta requiere URL");
-  }
 
   const query = input.id
     ? supabase
@@ -1017,6 +1246,7 @@ export async function upsertOffer(input: OfferMutationInput): Promise<AdminOffer
 }
 
 export async function deleteOffer(id: string): Promise<void> {
+  await enforceAdminRateLimit("offerDelete");
   const supabase = getSupabaseClient();
   const { error } = await supabase.from("offers").delete().eq("id", id);
   throwIfError(error, "No se pudo eliminar la oferta");
@@ -1344,7 +1574,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     supabase.from("offers").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("merchants").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("clicks").select("id", { count: "exact", head: true }),
-    supabase.from("clicks").select("product_id,merchant_id,created_at").order("created_at", { ascending: false }).limit(5000),
+    supabase.from("clicks").select("product_id,merchant_id,created_at").order("created_at", { ascending: false }).limit(2000),
     supabase.from("search_terms").select("term,count").order("count", { ascending: false }).limit(10),
     supabase.from("products").select("id,name,search_count").order("search_count", { ascending: false }).limit(10),
     listSyncStatus(),

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Pencil, Trash2 } from "lucide-react";
@@ -9,7 +9,7 @@ import {
   deleteOffer,
   listMerchants,
   listOffers,
-  listProducts,
+  listProductsForSelect,
   logAdminAction,
   upsertOffer,
 } from "@/admin/services/adminCatalogService";
@@ -74,11 +74,23 @@ const INITIAL_FORM: FormState = {
   isFeatured: false,
 };
 
+function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
+
 export default function AdminOffersPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [search, setSearch] = useState("");
+  const [productLookup, setProductLookup] = useState("");
   const [productFilter, setProductFilter] = useState("all");
   const [merchantFilter, setMerchantFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -86,6 +98,7 @@ export default function AdminOffersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminOfferRecord | null>(null);
+  const debouncedProductLookup = useDebouncedValue(productLookup, 300);
 
   const offersQuery = useQuery({
     queryKey: ["admin-offers", { page, pageSize, search, productFilter, merchantFilter, statusFilter }],
@@ -101,11 +114,8 @@ export default function AdminOffersPage() {
   });
 
   const productsForSelectQuery = useQuery({
-    queryKey: ["admin-products-select"],
-    queryFn: async () => {
-      const data = await listProducts({ page: 1, pageSize: 500, search: "" });
-      return data.rows;
-    },
+    queryKey: ["admin-products-select", debouncedProductLookup],
+    queryFn: () => listProductsForSelect(debouncedProductLookup, 25),
   });
 
   const merchantsQuery = useQuery({ queryKey: ["admin-merchants"], queryFn: listMerchants });
@@ -203,7 +213,7 @@ export default function AdminOffersPage() {
       />
 
       <div className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
+        <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-6">
           <Input
             value={search}
             onChange={(event) => {
@@ -212,6 +222,12 @@ export default function AdminOffersPage() {
             }}
             placeholder="Buscar por URL..."
             className="lg:col-span-2"
+          />
+
+          <Input
+            value={productLookup}
+            onChange={(event) => setProductLookup(event.target.value)}
+            placeholder="Buscar producto..."
           />
 
           <Select
@@ -272,6 +288,8 @@ export default function AdminOffersPage() {
           </Select>
         </div>
 
+        {productsForSelectQuery.isFetching ? <p className="mb-3 text-xs text-muted-foreground">Buscando productos...</p> : null}
+
         <Table>
           <TableHeader>
             <TableRow>
@@ -286,6 +304,22 @@ export default function AdminOffersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {offersQuery.isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  Cargando ofertas...
+                </TableCell>
+              </TableRow>
+            ) : null}
+
+            {offersQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-destructive">
+                  {offersQuery.error instanceof Error ? offersQuery.error.message : "No se pudieron cargar ofertas"}
+                </TableCell>
+              </TableRow>
+            ) : null}
+
             {rows.map((offer) => (
               <TableRow key={offer.id}>
                 <TableCell>{offer.productName}</TableCell>
@@ -319,7 +353,7 @@ export default function AdminOffersPage() {
               </TableRow>
             ))}
 
-            {!rows.length ? (
+            {!offersQuery.isLoading && !offersQuery.error && !rows.length ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No hay ofertas para los filtros seleccionados.
@@ -362,6 +396,11 @@ export default function AdminOffersPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label>Producto</Label>
+              <Input
+                value={productLookup}
+                onChange={(event) => setProductLookup(event.target.value)}
+                placeholder="Buscar producto para seleccionar"
+              />
               <Select value={form.productId || ""} onValueChange={(value) => setForm((prev) => ({ ...prev, productId: value }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona producto" />

@@ -97,7 +97,7 @@ export default function AdminImportsPage() {
 
       setSelectedJobId(result.jobId);
       toast.success(
-        `Importacion completada. Creados: ${result.createdCount}, actualizados: ${result.updatedCount}, errores: ${result.errorCount}`,
+        `Importacion completada. Filas: ${result.processedRows}, creados: ${result.createdCount}, actualizados: ${result.updatedCount}, errores: ${result.errorCount}, advertencias: ${result.warningCount}`,
       );
     },
     onError: (error) => {
@@ -147,6 +147,16 @@ export default function AdminImportsPage() {
               {importMutation.isPending ? "Importando..." : "Ejecutar importacion"}
             </Button>
           </div>
+
+          {preview ? (
+            <p className="text-xs text-muted-foreground">
+              Preparado para importar {formatNumber(preview.totalRows)} filas en bloques transaccionales de 100.
+            </p>
+          ) : null}
+
+          {importMutation.isPending ? (
+            <p className="text-xs text-muted-foreground">Importacion en curso. Si falla una fila, el bloque completo se revierte.</p>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="csv-text">CSV en texto</Label>
@@ -250,6 +260,22 @@ export default function AdminImportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {jobsQuery.isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    Cargando jobs...
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
+              {jobsQuery.error ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-destructive">
+                    {jobsQuery.error instanceof Error ? jobsQuery.error.message : "No se pudieron cargar jobs"}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
               {(jobsQuery.data || []).map((job) => (
                 <TableRow key={job.id} data-state={selectedJobId === job.id ? "selected" : undefined}>
                   <TableCell>{formatDate(job.createdAt)}</TableCell>
@@ -269,7 +295,7 @@ export default function AdminImportsPage() {
                 </TableRow>
               ))}
 
-              {!jobsQuery.data?.length ? (
+              {!jobsQuery.isLoading && !jobsQuery.error && !jobsQuery.data?.length ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground">
                     Aun no hay jobs ejecutados.
@@ -300,6 +326,14 @@ export default function AdminImportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {logsQuery.error ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-destructive">
+                      {logsQuery.error instanceof Error ? logsQuery.error.message : "No se pudieron cargar logs"}
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+
                 {(logsQuery.data || []).map((log) => (
                   <TableRow key={log.id}>
                     <TableCell>{formatDate(log.createdAt)}</TableCell>
@@ -313,7 +347,7 @@ export default function AdminImportsPage() {
                   </TableRow>
                 ))}
 
-                {!logsQuery.isLoading && !logsQuery.data?.length ? (
+                {!logsQuery.isLoading && !logsQuery.error && !logsQuery.data?.length ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
                       No hay logs para este job.

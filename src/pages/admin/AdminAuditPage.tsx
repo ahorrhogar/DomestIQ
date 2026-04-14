@@ -131,6 +131,22 @@ export default function AdminAuditPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {auditQuery.isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    Cargando eventos de auditoria...
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
+              {auditQuery.error ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-destructive">
+                    {auditQuery.error instanceof Error ? auditQuery.error.message : "No se pudo cargar la auditoria"}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
               {filteredRows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{formatDate(row.createdAt)}</TableCell>
@@ -148,7 +164,7 @@ export default function AdminAuditPage() {
                 </TableRow>
               ))}
 
-              {!filteredRows.length ? (
+              {!auditQuery.isLoading && !auditQuery.error && !filteredRows.length ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground">
                     No hay eventos para los filtros actuales.

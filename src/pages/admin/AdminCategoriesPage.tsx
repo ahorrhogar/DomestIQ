@@ -215,6 +215,22 @@ export default function AdminCategoriesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {categoriesQuery.isLoading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  Cargando categorias...
+                </TableCell>
+              </TableRow>
+            ) : null}
+
+            {categoriesQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-destructive">
+                  {categoriesQuery.error instanceof Error ? categoriesQuery.error.message : "No se pudieron cargar categorias"}
+                </TableCell>
+              </TableRow>
+            ) : null}
+
             {filteredRows.map((category) => (
               <TableRow key={category.id}>
                 <TableCell>
@@ -245,7 +261,7 @@ export default function AdminCategoriesPage() {
               </TableRow>
             ))}
 
-            {!filteredRows.length ? (
+            {!categoriesQuery.isLoading && !categoriesQuery.error && !filteredRows.length ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center text-muted-foreground">
                   No se encontraron categorias.

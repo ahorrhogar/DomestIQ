@@ -176,6 +176,22 @@ export default function AdminBrandsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {brandsQuery.isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  Cargando marcas...
+                </TableCell>
+              </TableRow>
+            ) : null}
+
+            {brandsQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-destructive">
+                  {brandsQuery.error instanceof Error ? brandsQuery.error.message : "No se pudieron cargar marcas"}
+                </TableCell>
+              </TableRow>
+            ) : null}
+
             {filteredRows.map((brand) => (
               <TableRow key={brand.id}>
                 <TableCell>
@@ -204,7 +220,7 @@ export default function AdminBrandsPage() {
               </TableRow>
             ))}
 
-            {!filteredRows.length ? (
+            {!brandsQuery.isLoading && !brandsQuery.error && !filteredRows.length ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground">
                   No se encontraron marcas.

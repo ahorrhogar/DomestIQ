@@ -199,6 +199,22 @@ export default function AdminMerchantsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {merchantsQuery.isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  Cargando tiendas...
+                </TableCell>
+              </TableRow>
+            ) : null}
+
+            {merchantsQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-destructive">
+                  {merchantsQuery.error instanceof Error ? merchantsQuery.error.message : "No se pudieron cargar tiendas"}
+                </TableCell>
+              </TableRow>
+            ) : null}
+
             {filteredRows.map((merchant) => (
               <TableRow key={merchant.id}>
                 <TableCell>
@@ -228,7 +244,7 @@ export default function AdminMerchantsPage() {
               </TableRow>
             ))}
 
-            {!filteredRows.length ? (
+            {!merchantsQuery.isLoading && !merchantsQuery.error && !filteredRows.length ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
                   No se encontraron tiendas.

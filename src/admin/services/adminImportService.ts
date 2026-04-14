@@ -4,13 +4,10 @@ import { sanitizeText } from "@/infrastructure/security/sanitize";
 import type { ImportColumnMapping } from "@/admin/types";
 import {
   addImportJobLog,
-  addProductImage,
   createImportJob,
-  listProductImages,
   logAdminAction,
+  requireAdminRateLimit,
   updateImportJob,
-  upsertOffer,
-  upsertProduct,
 } from "@/admin/services/adminCatalogService";
 
 const DEFAULT_MAPPING: ImportColumnMapping = {
@@ -43,6 +40,54 @@ export interface CsvImportResult {
   createdCount: number;
   updatedCount: number;
   errorCount: number;
+  warningCount: number;
+  processedRows: number;
+}
+
+interface ImportRpcResult {
+  createdCount?: number;
+  updatedCount?: number;
+  errorCount?: number;
+  warningCount?: number;
+  totalRows?: number;
+  batchSize?: number;
+}
+
+interface RowImportError {
+  rowIndex: number;
+  message: string;
+}
+
+interface ImportPayloadRow {
+  product_name: string;
+  brand_name: string;
+  category_name: string;
+  subcategory_name: string;
+  description: string;
+  long_description: string;
+  merchant_name: string;
+  offer_url: string;
+  image_url: string;
+  price: number;
+  old_price: number | null;
+  stock: boolean;
+  sku: string;
+  ean: string;
+  tags: string[];
+}
+
+const MAX_CSV_CHARS = 2_000_000;
+const MAX_IMPORT_ROWS = 10_000;
+const IMPORT_BATCH_SIZE = 100;
+
+function assertCsvLimits(csvText: string, rowCount?: number): void {
+  if (csvText.length > MAX_CSV_CHARS) {
+    throw new Error("El CSV supera el limite permitido (2MB de texto)");
+  }
+
+  if (typeof rowCount === "number" && rowCount > MAX_IMPORT_ROWS) {
+    throw new Error(`El CSV supera el limite de ${MAX_IMPORT_ROWS} filas por importacion`);
+  }
 }
 
 function normalizeHeader(value: string): string {
@@ -101,7 +146,9 @@ function inferMapping(headers: string[]): ImportColumnMapping {
 }
 
 export function parseCsvPreview(csvText: string): CsvPreviewResult {
+  assertCsvLimits(csvText);
   const rows = parseCsv(csvText);
+  assertCsvLimits(csvText, rows.length);
   const headers = rows.length ? Object.keys(rows[0]) : [];
 
   return {
@@ -110,158 +157,6 @@ export function parseCsvPreview(csvText: string): CsvPreviewResult {
     totalRows: rows.length,
     mapping: inferMapping(headers),
   };
-}
-
-async function findBrandIdByName(name: string): Promise<string | null> {
-  const supabase = getSupabaseClient();
-  const safeName = sanitizeText(name, 120);
-
-  if (!safeName) {
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from("brands")
-    .select("id")
-    .ilike("name", safeName)
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message || "No se pudo buscar marca");
-  }
-
-  if (data?.length) {
-    return String(data[0].id);
-  }
-
-  const insert = await supabase.from("brands").insert({ name: safeName, is_active: true }).select("id").single();
-  if (insert.error) {
-    throw new Error(insert.error.message || "No se pudo crear marca");
-  }
-
-  return String(insert.data.id);
-}
-
-async function findMerchantIdByName(name: string): Promise<string | null> {
-  const supabase = getSupabaseClient();
-  const safeName = sanitizeText(name, 120);
-
-  if (!safeName) {
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from("merchants")
-    .select("id")
-    .ilike("name", safeName)
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message || "No se pudo buscar tienda");
-  }
-
-  if (data?.length) {
-    return String(data[0].id);
-  }
-
-  const insert = await supabase
-    .from("merchants")
-    .insert({ name: safeName, country: "ES", is_active: true })
-    .select("id")
-    .single();
-
-  if (insert.error) {
-    throw new Error(insert.error.message || "No se pudo crear tienda");
-  }
-
-  return String(insert.data.id);
-}
-
-async function findCategoryId(name: string, parentId: string | null): Promise<string | null> {
-  const supabase = getSupabaseClient();
-  const safeName = sanitizeText(name, 120);
-
-  if (!safeName) {
-    return null;
-  }
-
-  let query = supabase.from("categories").select("id").ilike("name", safeName).limit(1);
-  if (parentId) {
-    query = query.eq("parent_id", parentId);
-  } else {
-    query = query.is("parent_id", null);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(error.message || "No se pudo buscar categoria");
-  }
-
-  return data?.length ? String(data[0].id) : null;
-}
-
-function buildSlug(value: string): string {
-  return normalizeHeader(value)
-    .replace(/_+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-async function ensureCategoryHierarchy(categoryName: string, subcategoryName: string): Promise<string | null> {
-  const supabase = getSupabaseClient();
-  const safeCategory = sanitizeText(categoryName, 120);
-  const safeSubcategory = sanitizeText(subcategoryName, 120);
-
-  if (!safeCategory && !safeSubcategory) {
-    return null;
-  }
-
-  let parentId = await findCategoryId(safeCategory || safeSubcategory, null);
-  if (!parentId) {
-    const parentInsert = await supabase
-      .from("categories")
-      .insert({
-        name: safeCategory || safeSubcategory,
-        slug: buildSlug(safeCategory || safeSubcategory),
-        parent_id: null,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-
-    if (parentInsert.error) {
-      throw new Error(parentInsert.error.message || "No se pudo crear categoria");
-    }
-
-    parentId = String(parentInsert.data.id);
-  }
-
-  if (!safeSubcategory) {
-    return parentId;
-  }
-
-  let subcategoryId = await findCategoryId(safeSubcategory, parentId);
-  if (!subcategoryId) {
-    const childInsert = await supabase
-      .from("categories")
-      .insert({
-        name: safeSubcategory,
-        slug: buildSlug(safeSubcategory),
-        parent_id: parentId,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-
-    if (childInsert.error) {
-      throw new Error(childInsert.error.message || "No se pudo crear subcategoria");
-    }
-
-    subcategoryId = String(childInsert.data.id);
-  }
-
-  return subcategoryId;
 }
 
 function parseTags(value: string): string[] {
@@ -290,13 +185,88 @@ function readField(row: Record<string, string>, key: string): string {
   return sanitizeText(row[key] || "", 2000);
 }
 
+function buildImportPayload(rows: Array<Record<string, string>>, mapping: ImportColumnMapping): ImportPayloadRow[] {
+  return rows.map((row) => {
+    const oldPriceRaw = parseNumber(readField(row, mapping.oldPrice));
+
+    return {
+      product_name: readField(row, mapping.productName),
+      brand_name: readField(row, mapping.brandName) || "Sin marca",
+      category_name: readField(row, mapping.categoryName) || "General",
+      subcategory_name: readField(row, mapping.subcategoryName),
+      description: readField(row, mapping.description),
+      long_description: readField(row, mapping.longDescription),
+      merchant_name: readField(row, mapping.merchantName),
+      offer_url: readField(row, mapping.offerUrl),
+      image_url: readField(row, mapping.imageUrl),
+      price: parseNumber(readField(row, mapping.price)),
+      old_price: oldPriceRaw > 0 ? oldPriceRaw : null,
+      stock: parseBoolean(readField(row, mapping.stock)),
+      sku: readField(row, mapping.sku),
+      ean: readField(row, mapping.ean),
+      tags: parseTags(readField(row, mapping.tags)),
+    };
+  });
+}
+
+function parseImportRowErrors(value: string | null | undefined): RowImportError[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+
+        const rowIndex = Number((entry as { rowIndex?: unknown }).rowIndex);
+        const message = String((entry as { message?: unknown }).message || "Error desconocido en fila");
+
+        if (!Number.isFinite(rowIndex) || rowIndex < 0) {
+          return null;
+        }
+
+        return { rowIndex, message };
+      })
+      .filter((entry): entry is RowImportError => Boolean(entry));
+  } catch {
+    return [];
+  }
+}
+
+function isSupabaseError(error: unknown): error is { message?: string; details?: string } {
+  return Boolean(error) && typeof error === "object";
+}
+
+async function persistImportRowErrors(jobId: string, rowErrors: RowImportError[]): Promise<void> {
+  for (const rowError of rowErrors) {
+    await addImportJobLog({
+      jobId,
+      level: "error",
+      rowIndex: rowError.rowIndex,
+      message: rowError.message,
+    });
+  }
+}
+
 export async function runCsvImport(params: {
   csvText: string;
   mapping: ImportColumnMapping;
   sourceLabel?: string;
 }): Promise<CsvImportResult> {
   const supabase = getSupabaseClient();
+  await requireAdminRateLimit("csvImport");
+
+  assertCsvLimits(params.csvText);
   const rows = parseCsv(params.csvText);
+  assertCsvLimits(params.csvText, rows.length);
 
   if (!rows.length) {
     throw new Error("El CSV no contiene filas para importar");
@@ -306,162 +276,63 @@ export async function runCsvImport(params: {
     source: params.sourceLabel || "admin_csv",
     status: "running",
     rowCount: rows.length,
-    metadata: { mapping: params.mapping },
+    metadata: { mapping: params.mapping, batchSize: IMPORT_BATCH_SIZE },
   });
 
-  let createdCount = 0;
-  let updatedCount = 0;
-  let errorCount = 0;
-
   try {
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index];
+    const payloadRows = buildImportPayload(rows, params.mapping);
 
-      try {
-        const productName = readField(row, params.mapping.productName);
-        const brandName = readField(row, params.mapping.brandName);
-        const categoryName = readField(row, params.mapping.categoryName);
-        const subcategoryName = readField(row, params.mapping.subcategoryName);
-        const description = readField(row, params.mapping.description);
-        const longDescription = readField(row, params.mapping.longDescription);
-        const merchantName = readField(row, params.mapping.merchantName);
-        const offerUrl = readField(row, params.mapping.offerUrl);
-        const imageUrl = readField(row, params.mapping.imageUrl);
-        const price = parseNumber(readField(row, params.mapping.price));
-        const oldPrice = parseNumber(readField(row, params.mapping.oldPrice));
-        const stock = parseBoolean(readField(row, params.mapping.stock));
-        const sku = readField(row, params.mapping.sku);
-        const ean = readField(row, params.mapping.ean);
-        const tags = parseTags(readField(row, params.mapping.tags));
+    const { data, error } = await supabase.rpc("import_products_batch", {
+      p_job_id: job.id,
+      p_data: payloadRows,
+      p_batch_size: IMPORT_BATCH_SIZE,
+    });
 
-        if (!productName || !merchantName || !offerUrl || price <= 0) {
-          errorCount += 1;
-          await addImportJobLog({
-            jobId: job.id,
-            level: "warning",
-            rowIndex: index,
-            message: "Fila omitida por datos obligatorios faltantes",
-            payload: { productName, merchantName, offerUrl, price },
-          });
-          continue;
-        }
-
-        const brandId = await findBrandIdByName(brandName || "Sin marca");
-        const categoryId = await ensureCategoryHierarchy(categoryName || "General", subcategoryName);
-        const merchantId = await findMerchantIdByName(merchantName);
-
-        if (!brandId || !categoryId || !merchantId) {
-          errorCount += 1;
-          await addImportJobLog({
-            jobId: job.id,
-            level: "error",
-            rowIndex: index,
-            message: "No se pudieron resolver entidades relacionadas",
-            payload: { brandName, categoryName, subcategoryName, merchantName },
-          });
-          continue;
-        }
-
-        const slug = buildSlug(productName);
-        const existingProduct = await supabase
-          .from("products")
-          .select("id")
-          .eq("slug", slug)
-          .maybeSingle();
-
-        if (existingProduct.error) {
-          throw new Error(existingProduct.error.message || "No se pudo consultar producto existente");
-        }
-
-        const product = await upsertProduct({
-          id: existingProduct.data?.id ? String(existingProduct.data.id) : undefined,
-          name: productName,
-          slug,
-          brandId,
-          categoryId,
-          shortDescription: description || longDescription,
-          longDescription: longDescription || description,
-          tags,
-          technicalSpecs: [],
-          attributes: {},
-          isActive: true,
-          sku: sku || undefined,
-          ean: ean || undefined,
-        });
-
-        if (existingProduct.data?.id) {
-          updatedCount += 1;
-        } else {
-          createdCount += 1;
-        }
-
-        const existingOffer = await supabase
-          .from("offers")
-          .select("id")
-          .eq("product_id", product.id)
-          .eq("merchant_id", merchantId)
-          .eq("url", offerUrl)
-          .maybeSingle();
-
-        if (existingOffer.error) {
-          throw new Error(existingOffer.error.message || "No se pudo consultar oferta existente");
-        }
-
-        await upsertOffer({
-          id: existingOffer.data?.id ? String(existingOffer.data.id) : undefined,
-          productId: product.id,
-          merchantId,
-          price,
-          oldPrice: oldPrice > 0 ? oldPrice : undefined,
-          url: offerUrl,
-          stock,
-          isActive: true,
-          isFeatured: false,
-        });
-
-        if (existingOffer.data?.id) {
-          updatedCount += 1;
-        } else {
-          createdCount += 1;
-        }
-
-        if (imageUrl) {
-          const images = await listProductImages(product.id);
-          const hasSameUrl = images.some((image) => image.url === imageUrl);
-          if (!hasSameUrl) {
-            const shouldBePrimary = images.length === 0;
-            await addProductImage(product.id, imageUrl, shouldBePrimary);
-          }
-        }
-      } catch (rowError) {
-        errorCount += 1;
-        await addImportJobLog({
-          jobId: job.id,
-          level: "error",
-          rowIndex: index,
-          message: rowError instanceof Error ? rowError.message : "Error desconocido en fila",
-          payload: rows[index],
-        });
-      }
+    if (error) {
+      throw error;
     }
 
+    const result = (data || {}) as ImportRpcResult;
+    const createdCount = Number(result.createdCount || 0);
+    const updatedCount = Number(result.updatedCount || 0);
+    const errorCount = Number(result.errorCount || 0);
+    const warningCount = Number(result.warningCount || 0);
+    const processedRows = Number(result.totalRows || rows.length);
+
     await updateImportJob(job.id, {
-      status: errorCount > 0 ? "completed" : "completed",
+      status: "completed",
       createdCount,
       updatedCount,
       errorCount,
+      metadata: {
+        mapping: params.mapping,
+        batchSize: IMPORT_BATCH_SIZE,
+        warningCount,
+        processedRows,
+      },
       finishedAt: new Date().toISOString(),
     });
+
+    if (warningCount > 0) {
+      await addImportJobLog({
+        jobId: job.id,
+        level: "warning",
+        message: `Se completaron ${processedRows} filas con ${warningCount} advertencias`,
+        payload: { warningCount, processedRows },
+      });
+    }
 
     await logAdminAction({
       action: "import.csv",
       entityType: "catalog",
       entityId: job.id,
       payload: {
-        rowCount: rows.length,
+        rowCount: processedRows,
         createdCount,
         updatedCount,
         errorCount,
+        warningCount,
+        batchSize: IMPORT_BATCH_SIZE,
       },
     });
 
@@ -470,22 +341,53 @@ export async function runCsvImport(params: {
       createdCount,
       updatedCount,
       errorCount,
+      warningCount,
+      processedRows,
     };
   } catch (error) {
+    const rowErrors = isSupabaseError(error)
+      ? parseImportRowErrors(error.details || error.message)
+      : [];
+
+    if (rowErrors.length) {
+      try {
+        await persistImportRowErrors(job.id, rowErrors);
+      } catch {
+        // Keep original error handling path when logging individual rows fails.
+      }
+    }
+
+    const safeErrorCount = rowErrors.length > 0 ? rowErrors.length : 1;
+
     await updateImportJob(job.id, {
       status: "failed",
-      createdCount,
-      updatedCount,
-      errorCount: errorCount + 1,
+      createdCount: 0,
+      updatedCount: 0,
+      errorCount: safeErrorCount,
+      metadata: {
+        mapping: params.mapping,
+        batchSize: IMPORT_BATCH_SIZE,
+        rollback: true,
+      },
       finishedAt: new Date().toISOString(),
     });
 
     await addImportJobLog({
       jobId: job.id,
       level: "error",
-      message: error instanceof Error ? error.message : "Importacion fallida",
+      message:
+        error instanceof Error
+          ? error.message.includes("IMPORT_BATCH_FAILED")
+            ? "Importacion revertida: una o mas filas fallaron validacion"
+            : error.message
+          : "Importacion fallida",
+      payload: rowErrors.length ? { rowErrors: rowErrors.length } : {},
     });
 
-    throw error;
+    if (rowErrors.length) {
+      throw new Error(`Importacion revertida. Filas con error: ${rowErrors.length}`);
+    }
+
+    throw error instanceof Error ? error : new Error("Importacion fallida");
   }
 }
