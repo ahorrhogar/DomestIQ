@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Menu, X, Heart, Sparkles, ChevronRight } from 'lucide-react';
+import { Search, Menu, X, Heart, Sparkles, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { categoryService } from '@/services';
 
@@ -8,6 +8,7 @@ const Header = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [mobileActiveCategoryId, setMobileActiveCategoryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
@@ -53,6 +54,7 @@ const Header = () => {
   };
 
   const activeCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
+  const mobileActiveCategory = categories.find((category) => category.id === mobileActiveCategoryId);
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
@@ -75,7 +77,16 @@ const Header = () => {
         <div className="flex items-center gap-4">
           {/* Hamburger mega menu trigger */}
           <button
-            onClick={() => { setMegaMenuOpen(!megaMenuOpen); setActiveCategoryId(categories[0]?.id || null); }}
+            onClick={() => {
+              setMegaMenuOpen((previous) => {
+                const nextOpen = !previous;
+                if (nextOpen) {
+                  setActiveCategoryId(categories[0]?.id || null);
+                  setMobileActiveCategoryId(null);
+                }
+                return nextOpen;
+              });
+            }}
             className="p-2 rounded-lg hover:bg-secondary transition-colors"
             aria-label="Menú de categorías"
           >
@@ -165,7 +176,7 @@ const Header = () => {
       {megaMenuOpen && (
         <div ref={megaRef} className="absolute left-0 right-0 top-full bg-card border-b border-border shadow-xl z-50 animate-fade-in">
           <div className="container mx-auto px-4 py-0">
-            <div className="flex min-h-[340px]">
+            <div className="hidden md:flex min-h-[340px]">
               {/* Left: category list */}
               <div className="w-56 border-r border-border py-4 pr-2">
                 {categories.map(cat => (
@@ -223,6 +234,69 @@ const Header = () => {
                   </>
                 )}
               </div>
+            </div>
+
+            <div className="md:hidden py-4">
+              {!mobileActiveCategory && (
+                <div className="space-y-1">
+                  {categories.map((category) => (
+                    <button
+                      key={category.id}
+                      onClick={() => setMobileActiveCategoryId(category.id)}
+                      className="w-full flex items-center justify-between px-3 py-3 rounded-lg text-sm font-medium text-left text-foreground/90 hover:bg-secondary transition-colors"
+                    >
+                      <span>{category.name}</span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {mobileActiveCategory && (
+                <div>
+                  <button
+                    onClick={() => setMobileActiveCategoryId(null)}
+                    className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Volver a categorías
+                  </button>
+
+                  <Link
+                    to={`/categoria/${mobileActiveCategory.slug}`}
+                    onClick={() => setMegaMenuOpen(false)}
+                    className="font-display font-bold text-foreground text-base mb-3 block hover:text-accent transition-colors"
+                  >
+                    {mobileActiveCategory.name}
+                  </Link>
+
+                  <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+                    {(mobileActiveCategory.subcategories || []).map((subcategory) => (
+                      <Link
+                        key={subcategory.id}
+                        to={`/categoria/${mobileActiveCategory.slug}/${subcategory.slug}`}
+                        onClick={() => setMegaMenuOpen(false)}
+                        className="w-full flex items-center justify-between px-2 py-2.5 rounded-lg text-sm text-foreground/80 hover:bg-secondary hover:text-accent transition-colors"
+                      >
+                        <span>{subcategory.name}</span>
+                        {subcategory.productCount > 0 && (
+                          <span className="text-xs text-muted-foreground ml-2">({subcategory.productCount})</span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+
+                  <div className="mt-4">
+                    <Link
+                      to={`/categoria/${mobileActiveCategory.slug}`}
+                      onClick={() => setMegaMenuOpen(false)}
+                      className="text-sm font-semibold text-accent hover:underline"
+                    >
+                      Ver todo en {mobileActiveCategory.name} →
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
