@@ -1,0 +1,18 @@
+export type {
+  AssistantPriority,
+  AssistantQuery,
+  AssistantResult,
+  AssistantTag,
+  Category,
+  Merchant,
+  Offer,
+  PriceAnalysis,
+  PriceHistory as PriceHistoryEntry,
+  Product,
+  ProductFilterMetadata,
+  ProductFilters,
+  ProductSortBy,
+  ProductSpec,
+  Subcategory,
+  TrendingCategory,
+} from "@/domain/catalog/types";
