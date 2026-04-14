@@ -16,6 +16,25 @@ DomestIQ is currently a Vite + React frontend, now structured as a production-re
 - `npm run lint`: run ESLint
 - `npm run test`: run Vitest tests
 
+## Vercel Deploy
+
+This project is ready for static deploy on Vercel as a Vite SPA.
+
+Required project settings in Vercel:
+
+- Framework Preset: Vite
+- Install Command: `npm install`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+
+SPA routing fallback is configured in `vercel.json` so routes like `/buscar`, `/categoria/...`, and `/producto/...` resolve to the app entrypoint.
+
+Set these Environment Variables in Vercel (Production and Preview):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_USE_REDIRECT_API` (optional, default `false`)
+
 ## Architecture Overview
 
 - `src/domain`: pure business/domain types and logic
