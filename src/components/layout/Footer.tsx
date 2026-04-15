@@ -9,9 +9,14 @@ const Footer = () => {
     <div className="container mx-auto px-4 py-12">
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
         <div className="col-span-2 md:col-span-1 lg:col-span-1">
-          <h2 className="font-display text-xl font-bold mb-3">
-            <span className="text-primary-foreground">Domest</span>
-            <span className="text-accent">IQ</span>
+          <h2 className="mb-3">
+            <img
+              src="/homara-logo-orange.svg"
+              alt="Homara"
+              className="h-10 w-auto max-w-full"
+              loading="lazy"
+              decoding="async"
+            />
           </h2>
           <p className="text-sm text-primary-foreground/70 leading-relaxed">
             El comparador de precios especializado en hogar para España. Ahorra tiempo y dinero en tus compras.

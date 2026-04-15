@@ -94,10 +94,13 @@ const Header = () => {
           </button>
 
           <Link to="/" className="flex-shrink-0">
-            <h1 className="font-display text-xl md:text-2xl font-bold">
-              <span className="text-primary">Domest</span>
-              <span className="text-accent">IQ</span>
-            </h1>
+            <img
+              src="/homara-logo.svg"
+              alt="Homara"
+              className="h-9 w-auto md:h-11"
+              loading="eager"
+              decoding="async"
+            />
           </Link>
 
           <div className="flex-1 max-w-2xl hidden md:block">
