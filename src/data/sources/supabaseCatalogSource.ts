@@ -91,6 +91,17 @@ interface OfferRedirectRow {
   merchant_domain?: string | null;
 }
 
+export interface TrackClickOptions {
+  offerId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+interface TrackClickRpcResponse {
+  accepted?: boolean;
+  reason?: string;
+}
+
 interface CatalogSnapshot {
   products: Product[];
   categories: Category[];
@@ -1280,22 +1291,43 @@ export async function trackClick(
   productId: string,
   merchantId: string,
   client?: SupabaseClientLike,
+  options?: TrackClickOptions,
 ): Promise<void> {
   const supabase = client || getSupabaseClient();
-  const { error } = await supabase.from("clicks").insert({
-    product_id: productId,
-    merchant_id: merchantId,
+  const { data, error } = await supabase.rpc("track_click_secure", {
+    p_product_id: productId,
+    p_merchant_id: merchantId,
+    p_offer_id: options?.offerId || null,
+    p_ip_override: options?.ipAddress || null,
+    p_user_agent_override: options?.userAgent || null,
   });
 
   if (error) {
     logger.log({
       level: "warn",
-      message: "Click tracking insert failed",
+      message: "Click tracking RPC failed",
       timestamp: new Date().toISOString(),
       context: {
         productId,
         merchantId,
+        offerId: options?.offerId || null,
         error,
+      },
+    });
+    return;
+  }
+
+  const payload = data && typeof data === "object" ? (data as TrackClickRpcResponse) : null;
+  if (!payload?.accepted) {
+    logger.log({
+      level: "info",
+      message: "Click tracking blocked by anti-abuse controls",
+      timestamp: new Date().toISOString(),
+      context: {
+        productId,
+        merchantId,
+        offerId: options?.offerId || null,
+        reason: payload?.reason || "unknown",
       },
     });
     return;

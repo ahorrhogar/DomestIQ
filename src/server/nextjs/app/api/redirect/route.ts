@@ -5,6 +5,19 @@ import { getServerSupabaseClient } from "@/server/nextjs/lib/supabaseServerClien
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function getClientIp(request: Request): string | undefined {
+  const forwardedFor = request.headers.get("x-forwarded-for") || "";
+  const realIp = request.headers.get("x-real-ip") || "";
+  const candidate = forwardedFor || realIp;
+  const ip = candidate.split(",")[0]?.trim();
+
+  if (!ip) {
+    return undefined;
+  }
+
+  return ip;
+}
+
 export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   const offerId = requestUrl.searchParams.get("offerId") || "";
@@ -37,7 +50,11 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     if (shouldTrack) {
-      await trackClick(offer.product_id, offer.merchant_id, supabase);
+      await trackClick(offer.product_id, offer.merchant_id, supabase, {
+        offerId: offer.id,
+        ipAddress: getClientIp(request),
+        userAgent: request.headers.get("user-agent") || undefined,
+      });
     }
 
     return Response.redirect(offer.url, 302);
