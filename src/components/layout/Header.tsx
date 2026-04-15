@@ -74,7 +74,7 @@ const Header = () => {
 
       {/* Main header */}
       <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
           {/* Hamburger mega menu trigger */}
           <button
             onClick={() => {
@@ -97,11 +97,30 @@ const Header = () => {
             <img
               src="/homara-logo.svg"
               alt="Homara"
-              className="h-9 w-auto md:h-11"
+              className="h-8 w-auto md:h-11"
               loading="eager"
               decoding="async"
             />
           </Link>
+
+          <div className="flex-1 min-w-0 md:hidden">
+            <form className="relative" onSubmit={handleSearchSubmit}>
+              <button
+                type="submit"
+                aria-label="Buscar"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Buscar productos..."
+                className="w-full pl-10 pr-3 py-2 rounded-xl border border-border bg-secondary/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+              />
+            </form>
+          </div>
 
           <div className="flex-1 max-w-2xl hidden md:block">
             <form className="relative" onSubmit={handleSearchSubmit}>
@@ -122,7 +141,7 @@ const Header = () => {
             </form>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 ml-1 md:ml-auto">
             <Link to="/asistente" className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-medium text-sm hover:opacity-90 transition-opacity">
               <Sparkles className="w-4 h-4" />
               Asistente
@@ -131,26 +150,6 @@ const Header = () => {
               <Heart className="w-5 h-5 text-muted-foreground" />
             </button>
           </div>
-        </div>
-
-        {/* Mobile search */}
-        <div className="md:hidden mt-3">
-          <form className="relative" onSubmit={handleSearchSubmit}>
-            <button
-              type="submit"
-              aria-label="Buscar"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Buscar productos, marcas o tiendas..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-secondary/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-            />
-          </form>
         </div>
       </div>
 
