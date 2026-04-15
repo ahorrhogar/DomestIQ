@@ -55,6 +55,7 @@ interface ProductImageRow {
   product_id: string;
   url: string;
   is_primary: boolean;
+  sort_order?: number | null;
 }
 
 interface MerchantRow {
@@ -760,7 +761,20 @@ function buildProducts(
       const editorialPriority = Math.max(0, Math.min(100, Math.round(editorialPriorityValue)));
 
       const images = (imagesByProductId.get(row.id) || [])
-        .sort((left, right) => Number(right.is_primary) - Number(left.is_primary))
+        .sort((left, right) => {
+          const leftSortOrder = Number(left.sort_order ?? 0);
+          const rightSortOrder = Number(right.sort_order ?? 0);
+          if (leftSortOrder !== rightSortOrder) {
+            return leftSortOrder - rightSortOrder;
+          }
+
+          const primaryDiff = Number(right.is_primary) - Number(left.is_primary);
+          if (primaryDiff !== 0) {
+            return primaryDiff;
+          }
+
+          return String(left.id).localeCompare(String(right.id));
+        })
         .map((image) => image.url);
 
       const discountPercent = computeDiscountPercent({
@@ -1172,7 +1186,7 @@ async function buildSnapshot(client: SupabaseClientLike): Promise<CatalogSnapsho
     queryTable<BrandRow>("brands", "id,name", client),
     queryTable<CategoryRow>("categories", "id,name,parent_id", client),
     queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,attributes,is_active,created_at", client),
-    queryTable<ProductImageRow>("product_images", "id,product_id,url,is_primary", client),
+    queryTable<ProductImageRow>("product_images", "id,product_id,url,is_primary,sort_order", client),
     queryTable<MerchantRow>("merchants", "id,name,logo_url", client),
     queryTable<OfferRow>("offers", "id,product_id,merchant_id,price,old_price,url,stock,is_active,updated_at", client),
     queryTable<PriceHistoryRow>("price_history", "id,product_id,price,created_at", client),

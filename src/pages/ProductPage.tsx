@@ -145,10 +145,10 @@ const ProductPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col overflow-x-hidden">
       <Header />
       <main className="flex-1">
-        <div className="container mx-auto px-4">
+        <div className="container mx-auto overflow-x-hidden px-4">
           <Breadcrumb items={breadcrumbs} />
 
           {/* Product main */}
@@ -248,9 +248,9 @@ const ProductPage = () => {
             </div>
 
             {/* Info */}
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-muted-foreground mb-1">{product.brand}</p>
-              <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-3">{product.name}</h1>
+              <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-3 break-words">{product.name}</h1>
 
               {/* Rating */}
               <div className="flex items-center gap-2 mb-4">
@@ -304,11 +304,11 @@ const ProductPage = () => {
               {/* Specs */}
               <div className="mb-6">
                 <h3 className="font-semibold text-foreground mb-3">Especificaciones</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {visibleSpecs.map((spec, i) => (
-                    <div key={i} className="flex justify-between p-2.5 rounded-lg bg-secondary/50 text-sm">
-                      <span className="text-muted-foreground">{spec.label}</span>
-                      <span className="font-medium text-foreground">{spec.value}</span>
+                    <div key={i} className="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-secondary/50 text-sm min-w-0">
+                      <span className="text-muted-foreground min-w-0 break-words">{spec.label}</span>
+                      <span className="font-medium text-foreground min-w-0 break-words text-right">{spec.value}</span>
                     </div>
                   ))}
                 </div>
@@ -385,8 +385,8 @@ const ProductPage = () => {
                   </div>
 
                   {/* Price & CTA */}
-                  <div className="flex items-center gap-4 md:gap-6">
-                    <div className="text-right">
+                  <div className="flex w-full flex-wrap items-center justify-between gap-3 md:w-auto md:flex-nowrap md:justify-end md:gap-6">
+                    <div className="text-left md:text-right min-w-0">
                       <div className={`text-xl font-bold ${i === 0 ? 'text-deal' : 'text-foreground'}`}>
                         {offer.price.toFixed(2).replace('.', ',')} €
                       </div>
@@ -481,7 +481,7 @@ const ProductPage = () => {
           {/* Long description */}
           <section className="mb-12 max-w-3xl">
             <h3 className="font-display text-xl font-bold text-foreground mb-3">Descripción</h3>
-            <p className="text-muted-foreground leading-relaxed">{product.longDescription}</p>
+            <p className="text-muted-foreground leading-relaxed break-words">{product.longDescription}</p>
           </section>
         </div>
 

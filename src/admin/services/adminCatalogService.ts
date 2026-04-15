@@ -1720,8 +1720,9 @@ export async function listProductImages(productId: string): Promise<AdminProduct
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("product_images")
-    .select("id,product_id,url,is_primary")
+    .select("id,product_id,url,is_primary,sort_order")
     .eq("product_id", productId)
+    .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
 
   throwIfError(error, "No se pudieron cargar imagenes");
@@ -1731,6 +1732,7 @@ export async function listProductImages(productId: string): Promise<AdminProduct
     productId: String(row.product_id),
     url: String(row.url),
     isPrimary: Boolean(row.is_primary),
+    sortOrder: Number(row.sort_order || 0),
   }));
 }
 
@@ -1750,6 +1752,16 @@ export async function addProductImage(productId: string, url: string, isPrimary:
       throw new Error("La imagen requiere una URL valida (http/https)");
     }
 
+    const sortProbe = await supabase
+      .from("product_images")
+      .select("sort_order")
+      .eq("product_id", productId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    throwIfError(sortProbe.error, "No se pudo calcular el orden de la imagen");
+    const nextSortOrder = Math.max(0, Number(sortProbe.data?.sort_order ?? -1) + 1);
+
     if (isPrimary) {
       const resetPrimary = await supabase.from("product_images").update({ is_primary: false }).eq("product_id", productId);
       throwIfError(resetPrimary.error, "No se pudo preparar imagen principal");
@@ -1757,8 +1769,8 @@ export async function addProductImage(productId: string, url: string, isPrimary:
 
     const { data, error } = await supabase
       .from("product_images")
-      .insert({ product_id: productId, url: safeUrl, is_primary: isPrimary })
-      .select("id,product_id,url,is_primary")
+      .insert({ product_id: productId, url: safeUrl, is_primary: isPrimary, sort_order: nextSortOrder })
+      .select("id,product_id,url,is_primary,sort_order")
       .single();
 
     throwIfError(error, "No se pudo agregar la imagen");
@@ -1768,6 +1780,7 @@ export async function addProductImage(productId: string, url: string, isPrimary:
       productId: String(data.product_id),
       url: String(data.url),
       isPrimary: Boolean(data.is_primary),
+      sortOrder: Number(data.sort_order || 0),
     };
 
     await safeLogAdminAction({
@@ -1788,6 +1801,64 @@ export async function addProductImage(productId: string, url: string, isPrimary:
       entityId: productId,
       payload: {
         operation: "add",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function reorderProductImages(productId: string, imageIdsInOrder: string[]): Promise<void> {
+  await enforceAdminRateLimit("productWrite");
+  const supabase = getSupabaseClient();
+  const sanitizedOrder = Array.from(
+    new Set(imageIdsInOrder.map((id) => sanitizeText(String(id || ""), 80)).filter(Boolean)),
+  );
+
+  if (!sanitizedOrder.length) {
+    throw new Error("No se recibio un orden de imagenes valido");
+  }
+
+  try {
+    const existingResult = await supabase.from("product_images").select("id").eq("product_id", productId);
+    throwIfError(existingResult.error, "No se pudo validar imagenes del producto");
+
+    const existingIds = (existingResult.data || []).map((row) => String(row.id));
+    if (!existingIds.length) {
+      return;
+    }
+
+    const hasSameCardinality = existingIds.length === sanitizedOrder.length;
+    const hasSameIds = existingIds.every((id) => sanitizedOrder.includes(id));
+    if (!hasSameCardinality || !hasSameIds) {
+      throw new Error("El orden enviado no coincide con las imagenes actuales del producto");
+    }
+
+    const updateResults = await Promise.all(
+      sanitizedOrder.map((imageId, index) =>
+        supabase.from("product_images").update({ sort_order: index }).eq("id", imageId).eq("product_id", productId),
+      ),
+    );
+
+    updateResults.forEach((result) => {
+      throwIfError(result.error, "No se pudo actualizar el orden de imagenes");
+    });
+
+    await safeLogAdminAction({
+      action: "product.image.reorder",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        imageCount: sanitizedOrder.length,
+      },
+    });
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "product.image.error",
+      entityType: "product",
+      entityId: productId,
+      payload: {
+        operation: "reorder",
         ...toAuditErrorPayload(error),
       },
     });

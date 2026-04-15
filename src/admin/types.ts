@@ -120,6 +120,7 @@ export interface AdminProductImageRecord {
   productId: string;
   url: string;
   isPrimary: boolean;
+  sortOrder: number;
 }
 
 export interface AdminClickRecord {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Copy, Pencil, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
 import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
@@ -16,6 +16,7 @@ import {
   listBrands,
   listCategories,
   listProductImages,
+  reorderProductImages,
   listProducts,
   setPrimaryProductImage,
   upsertProduct,
@@ -292,6 +293,19 @@ export default function AdminProductsPage() {
     },
   });
 
+  const reorderImagesMutation = useMutation({
+    mutationFn: (params: { productId: string; imageIdsInOrder: string[] }) =>
+      reorderProductImages(params.productId, params.imageIdsInOrder),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-product-images", form.id] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      toast.success("Orden de imagenes actualizado");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo actualizar el orden de imagenes");
+    },
+  });
+
   const deleteImageMutation = useMutation({
     mutationFn: deleteProductImage,
     onSuccess: async () => {
@@ -441,6 +455,35 @@ export default function AdminProductsPage() {
     }
 
     addImageUrlMutation.mutate({ productId, url: newImageUrl.trim() });
+  };
+
+  const moveImageOrder = (imageId: string, direction: "up" | "down") => {
+    if (!form.id) {
+      return;
+    }
+
+    const images = productImagesQuery.data || [];
+    const currentIndex = images.findIndex((image) => image.id === imageId);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= images.length) {
+      return;
+    }
+
+    const reordered = [...images];
+    const [movedImage] = reordered.splice(currentIndex, 1);
+    if (!movedImage) {
+      return;
+    }
+    reordered.splice(targetIndex, 0, movedImage);
+
+    reorderImagesMutation.mutate({
+      productId: form.id,
+      imageIdsInOrder: reordered.map((image) => image.id),
+    });
   };
 
   const onSave = async () => {
@@ -951,7 +994,7 @@ export default function AdminProductsPage() {
                 ) : null}
 
                 <div className="space-y-2">
-                  {(productImagesQuery.data || []).map((image) => (
+                  {(productImagesQuery.data || []).map((image, index) => (
                     <div key={image.id} className="flex w-full flex-col gap-2 overflow-hidden rounded-md border border-border p-2 md:flex-row md:items-center">
                       <img
                         src={image.url || PRODUCT_IMAGE_FALLBACK}
@@ -963,9 +1006,30 @@ export default function AdminProductsPage() {
                         <p className="max-w-full truncate text-xs text-muted-foreground" title={image.url}>
                           {formatCompactImageUrl(image.url)}
                         </p>
-                        {image.isPrimary ? <Badge className="mt-1">Principal</Badge> : null}
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <Badge variant="outline">Orden {index + 1}</Badge>
+                          {image.isPrimary ? <Badge>Principal</Badge> : null}
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-2 md:shrink-0 md:justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveImageOrder(image.id, "up")}
+                          disabled={index === 0 || reorderImagesMutation.isPending}
+                        >
+                          <ArrowUp className="mr-1 h-4 w-4" />
+                          Subir
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveImageOrder(image.id, "down")}
+                          disabled={index === (productImagesQuery.data || []).length - 1 || reorderImagesMutation.isPending}
+                        >
+                          <ArrowDown className="mr-1 h-4 w-4" />
+                          Bajar
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -973,10 +1037,16 @@ export default function AdminProductsPage() {
                             if (!form.id) return;
                             setPrimaryMutation.mutate({ productId: form.id, imageId: image.id });
                           }}
+                          disabled={reorderImagesMutation.isPending}
                         >
                           Principal
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => deleteImageMutation.mutate(image.id)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteImageMutation.mutate(image.id)}
+                          disabled={reorderImagesMutation.isPending}
+                        >
                           Eliminar
                         </Button>
                       </div>
