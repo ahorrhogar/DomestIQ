@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AdminNoIndex } from "@/admin/components/AdminNoIndex";
-import { signInAdmin } from "@/admin/services/adminAuthService";
+import { getAdminAuthStatus, signInAdmin } from "@/admin/services/adminAuthService";
 import { useAdminAuth } from "@/admin/hooks/useAdminAuth";
 
 const schema = z.object({
@@ -49,7 +49,15 @@ export default function AdminLoginPage() {
     try {
       setSubmitting(true);
       await signInAdmin(values.email, values.password);
+      const status = await getAdminAuthStatus();
       await refresh();
+
+      if (!status.isAdmin) {
+        toast.error("Acceso denegado: no tienes permisos de administrador");
+        navigate("/admin/denegado", { replace: true });
+        return;
+      }
+
       toast.success("Sesion iniciada");
       navigate(redirectPath, { replace: true });
     } catch (error) {
