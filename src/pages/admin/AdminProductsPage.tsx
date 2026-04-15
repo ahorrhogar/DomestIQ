@@ -19,6 +19,7 @@ import {
   reorderProductImages,
   listProducts,
   setPrimaryProductImage,
+  upsertBrand,
   upsertProduct,
   uploadProductImage,
 } from "@/admin/services/adminCatalogService";
@@ -57,7 +58,8 @@ const schema = z.object({
   name: z.string().min(3, "Nombre requerido"),
   slug: z.string().min(3, "Slug requerido"),
   brandId: z.string().uuid("Selecciona una marca"),
-  categoryId: z.string().uuid("Selecciona una categoria"),
+  parentCategoryId: z.string().uuid("Selecciona una categoria"),
+  subcategoryId: z.string().optional(),
   shortDescription: z.string().min(10, "Descripcion corta requerida"),
   longDescription: z.string().min(20, "Descripcion larga requerida"),
   tags: z.string().optional(),
@@ -75,7 +77,8 @@ interface FormState {
   name: string;
   slug: string;
   brandId: string;
-  categoryId: string;
+  parentCategoryId: string;
+  subcategoryId: string;
   shortDescription: string;
   longDescription: string;
   tags: string;
@@ -92,7 +95,8 @@ const INITIAL_FORM: FormState = {
   name: "",
   slug: "",
   brandId: "",
-  categoryId: "",
+  parentCategoryId: "",
+  subcategoryId: "",
   shortDescription: "",
   longDescription: "",
   tags: "",
@@ -178,14 +182,21 @@ export default function AdminProductsPage() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadInputKey, setUploadInputKey] = useState(0);
   const [isPreparingProductForImages, setIsPreparingProductForImages] = useState(false);
+  const [isInlineBrandFormOpen, setIsInlineBrandFormOpen] = useState(false);
+  const [newBrandName, setNewBrandName] = useState("");
 
   const isDialogDirty = useMemo(() => {
     if (!dialogOpen) {
       return false;
     }
 
-    return JSON.stringify(form) !== dialogInitialForm || Boolean(newImageUrl.trim()) || uploadFiles.length > 0;
-  }, [dialogOpen, form, dialogInitialForm, newImageUrl, uploadFiles]);
+    return (
+      JSON.stringify(form) !== dialogInitialForm ||
+      Boolean(newImageUrl.trim()) ||
+      uploadFiles.length > 0 ||
+      Boolean(newBrandName.trim())
+    );
+  }, [dialogOpen, form, dialogInitialForm, newImageUrl, uploadFiles, newBrandName]);
 
   const brandsQuery = useQuery({ queryKey: ["admin-brands"], queryFn: listBrands });
   const categoriesQuery = useQuery({ queryKey: ["admin-categories"], queryFn: listCategories });
@@ -245,6 +256,24 @@ export default function AdminProductsPage() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo eliminar el producto");
+    },
+  });
+
+  const createInlineBrandMutation = useMutation({
+    mutationFn: async (name: string) =>
+      upsertBrand({
+        name,
+        isActive: true,
+      }),
+    onSuccess: async (brand) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-brands"] });
+      setForm((prev) => ({ ...prev, brandId: brand.id }));
+      setNewBrandName("");
+      setIsInlineBrandFormOpen(false);
+      toast.success("Marca creada y seleccionada");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo crear la marca");
     },
   });
 
@@ -325,7 +354,7 @@ export default function AdminProductsPage() {
 
   const categoryOptions = useMemo(() => categoriesQuery.data || [], [categoriesQuery.data]);
   const brandOptions = useMemo(() => brandsQuery.data || [], [brandsQuery.data]);
-  const categorySelectOptions = useMemo(
+  const allCategorySelectOptions = useMemo(
     () =>
       categoryOptions.map((category) => ({
         value: category.id,
@@ -333,9 +362,33 @@ export default function AdminProductsPage() {
       })),
     [categoryOptions],
   );
+  const parentCategoryOptions = useMemo(
+    () => categoryOptions.filter((category) => !category.parentId),
+    [categoryOptions],
+  );
+  const parentCategorySelectOptions = useMemo(
+    () =>
+      parentCategoryOptions.map((category) => ({
+        value: category.id,
+        label: category.name,
+      })),
+    [parentCategoryOptions],
+  );
+  const subcategoryOptions = useMemo(
+    () => categoryOptions.filter((category) => category.parentId === form.parentCategoryId),
+    [categoryOptions, form.parentCategoryId],
+  );
+  const subcategorySelectOptions = useMemo(
+    () =>
+      subcategoryOptions.map((category) => ({
+        value: category.id,
+        label: category.name,
+      })),
+    [subcategoryOptions],
+  );
   const categoryFilterOptions = useMemo(
-    () => [{ value: "all", label: "Todas las categorias" }, ...categorySelectOptions],
-    [categorySelectOptions],
+    () => [{ value: "all", label: "Todas las categorias" }, ...allCategorySelectOptions],
+    [allCategorySelectOptions],
   );
 
   const openCreate = () => {
@@ -344,16 +397,23 @@ export default function AdminProductsPage() {
     setNewImageUrl("");
     setUploadFiles([]);
     setUploadInputKey((prev) => prev + 1);
+    setIsInlineBrandFormOpen(false);
+    setNewBrandName("");
     setDialogOpen(true);
   };
 
   const openEdit = (product: AdminProductRecord) => {
+    const selectedCategory = categoryOptions.find((category) => category.id === product.categoryId);
+    const parentCategoryId = selectedCategory?.parentId || product.categoryId;
+    const subcategoryId = selectedCategory?.parentId ? selectedCategory.id : "";
+
     const nextForm: FormState = {
       id: product.id,
       name: product.name,
       slug: product.slug,
       brandId: product.brandId,
-      categoryId: product.categoryId,
+      parentCategoryId,
+      subcategoryId,
       shortDescription: product.shortDescription,
       longDescription: product.longDescription,
       tags: product.tags.join(", "),
@@ -370,7 +430,19 @@ export default function AdminProductsPage() {
     setNewImageUrl("");
     setUploadFiles([]);
     setUploadInputKey((prev) => prev + 1);
+    setIsInlineBrandFormOpen(false);
+    setNewBrandName("");
     setDialogOpen(true);
+  };
+
+  const handleCreateInlineBrand = async () => {
+    const safeName = newBrandName.trim();
+    if (!safeName) {
+      toast.error("Indica el nombre de la marca");
+      return;
+    }
+
+    await createInlineBrandMutation.mutateAsync(safeName);
   };
 
   const requestCloseDialog = () => {
@@ -407,11 +479,12 @@ export default function AdminProductsPage() {
 
     setIsPreparingProductForImages(true);
     try {
+      const resolvedCategoryId = parsed.data.subcategoryId || parsed.data.parentCategoryId;
       const created = await upsertProduct({
         name: parsed.data.name,
         slug: parsed.data.slug,
         brandId: parsed.data.brandId,
-        categoryId: parsed.data.categoryId,
+        categoryId: resolvedCategoryId,
         shortDescription: parsed.data.shortDescription,
         longDescription: parsed.data.longDescription,
         tags: (parsed.data.tags || "")
@@ -493,12 +566,14 @@ export default function AdminProductsPage() {
       return;
     }
 
+    const resolvedCategoryId = parsed.data.subcategoryId || parsed.data.parentCategoryId;
+
     await saveMutation.mutateAsync({
       id: form.id,
       name: parsed.data.name,
       slug: parsed.data.slug,
       brandId: parsed.data.brandId,
-      categoryId: parsed.data.categoryId,
+      categoryId: resolvedCategoryId,
       shortDescription: parsed.data.shortDescription,
       longDescription: parsed.data.longDescription,
       tags: (parsed.data.tags || "")
@@ -773,7 +848,20 @@ export default function AdminProductsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="product-brand">Marca</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="product-brand">Marca</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-0 text-accent hover:text-accent"
+                    onClick={() => {
+                      setIsInlineBrandFormOpen((prev) => !prev);
+                    }}
+                  >
+                    {isInlineBrandFormOpen ? "Cancelar" : "Añadir marca"}
+                  </Button>
+                </div>
                 <Select value={form.brandId || ""} onValueChange={(value) => setForm((prev) => ({ ...prev, brandId: value }))}>
                   <SelectTrigger id="product-brand">
                     <SelectValue placeholder="Selecciona marca" />
@@ -786,19 +874,75 @@ export default function AdminProductsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {isInlineBrandFormOpen ? (
+                  <div className="rounded-md border border-border bg-secondary/30 p-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={newBrandName}
+                        onChange={(event) => setNewBrandName(event.target.value)}
+                        placeholder="Nombre de la nueva marca"
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") {
+                            return;
+                          }
+
+                          event.preventDefault();
+                          void handleCreateInlineBrand();
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="sm:shrink-0"
+                        disabled={createInlineBrandMutation.isPending}
+                        onClick={() => {
+                          void handleCreateInlineBrand();
+                        }}
+                      >
+                        {createInlineBrandMutation.isPending ? "Creando..." : "Crear marca"}
+                      </Button>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Si ya existe una marca con ese nombre, te avisaremos para evitar duplicados.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="product-category">Categoria</Label>
+                <Label htmlFor="product-parent-category">Categoria principal</Label>
                 <SearchableSelect
-                  id="product-category"
-                  value={form.categoryId || ""}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
-                  options={categorySelectOptions}
-                  placeholder="Selecciona categoria"
-                  searchPlaceholder="Buscar categoria..."
-                  emptyText="Sin categorias"
+                  id="product-parent-category"
+                  value={form.parentCategoryId || ""}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      parentCategoryId: value,
+                      subcategoryId: "",
+                    }))
+                  }
+                  options={parentCategorySelectOptions}
+                  placeholder="Selecciona categoria principal"
+                  searchPlaceholder="Buscar categoria principal..."
+                  emptyText="Sin categorias principales"
                   loading={categoriesQuery.isLoading}
+                  portalled={false}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-subcategory">Subcategoria</Label>
+                <SearchableSelect
+                  id="product-subcategory"
+                  value={form.subcategoryId || ""}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, subcategoryId: value }))}
+                  options={subcategorySelectOptions}
+                  placeholder="Selecciona subcategoria"
+                  searchPlaceholder="Buscar subcategoria..."
+                  emptyText={form.parentCategoryId ? "Sin subcategorias" : "Selecciona categoria principal primero"}
+                  loading={categoriesQuery.isLoading}
+                  disabled={!form.parentCategoryId || subcategorySelectOptions.length === 0}
                   portalled={false}
                 />
               </div>
