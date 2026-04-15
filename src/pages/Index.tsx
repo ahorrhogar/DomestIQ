@@ -12,6 +12,7 @@ import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const Index = () => {
   const [homeCollections, setHomeCollections] = useState(() => ({
@@ -76,6 +77,7 @@ const Index = () => {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 {topProducts.map((p) => {
                   const realDiscount = computeDiscountPercent(p);
+                  const previewImage = p.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK;
                   return (
                     <ProductDestinationLink
                       key={p.id}
@@ -88,7 +90,13 @@ const Index = () => {
                         </span>
                       ) : null}
                       <div className="aspect-square rounded-lg overflow-hidden bg-secondary/50 mb-2">
-                        <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                        <img
+                          src={previewImage}
+                          alt={p.name}
+                          className="w-full h-full object-contain p-2"
+                          loading="lazy"
+                          onError={(event) => applyProductImageFallback(event.currentTarget)}
+                        />
                       </div>
                       <p className="text-xs text-muted-foreground">{p.brand}</p>
                       <h3 className="text-xs font-medium text-foreground line-clamp-2 leading-tight mt-0.5">{p.name}</h3>

@@ -50,6 +50,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from "@/lib/productImage";
 
 const schema = z.object({
   name: z.string().min(3, "Nombre requerido"),
@@ -952,7 +953,12 @@ export default function AdminProductsPage() {
                 <div className="space-y-2">
                   {(productImagesQuery.data || []).map((image) => (
                     <div key={image.id} className="flex w-full flex-col gap-2 overflow-hidden rounded-md border border-border p-2 md:flex-row md:items-center">
-                      <img src={image.url} alt="Producto" className="h-16 w-16 rounded object-cover" />
+                      <img
+                        src={image.url || PRODUCT_IMAGE_FALLBACK}
+                        alt="Producto"
+                        className="h-16 w-16 rounded object-contain bg-secondary/40 p-1"
+                        onError={(event) => applyProductImageFallback(event.currentTarget)}
+                      />
                       <div className="min-w-0 flex-1 overflow-hidden">
                         <p className="max-w-full truncate text-xs text-muted-foreground" title={image.url}>
                           {formatCompactImageUrl(image.url)}

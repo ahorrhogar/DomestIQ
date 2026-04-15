@@ -3,10 +3,12 @@ import { Product } from '@/domain/catalog/types';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Star, ArrowRight, Tag, TrendingDown, Sparkles } from 'lucide-react';
 import ProductDestinationLink from '@/components/product/ProductDestinationLink';
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const ProductCard = ({ product }: { product: Product }) => {
   const realDiscount = computeDiscountPercent(product);
   const showDiscount = realDiscount && realDiscount > 0 && realDiscount <= 60;
+  const primaryImage = product.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK;
 
   return (
     <ProductDestinationLink
@@ -15,7 +17,12 @@ const ProductCard = ({ product }: { product: Product }) => {
     >
       {/* Image */}
       <div className="relative aspect-square bg-secondary/50 overflow-hidden">
-        <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        <img
+          src={primaryImage}
+          alt={product.name}
+          className="w-full h-full object-contain p-2"
+          onError={(event) => applyProductImageFallback(event.currentTarget)}
+        />
 
         {/* Badges */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5">

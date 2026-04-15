@@ -7,6 +7,7 @@ import type { AssistantPriority, AssistantResult } from '@/domain/catalog/types'
 import { analyticsService, categoryService, productService } from '@/services';
 import ProductDestinationLink from '@/components/product/ProductDestinationLink';
 import { getProductNavigationTarget } from '@/services/productNavigationService';
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const styles = productService.getFilterMetadata(productService.getAllProducts()).styles;
 const priorities = [
@@ -140,11 +141,17 @@ const AssistantPage = () => {
               <div className="space-y-4">
                 {results.map((r, i) => {
                   const navigationTarget = getProductNavigationTarget(r.product);
+                  const previewImage = r.product.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK;
 
                   return (
                     <div key={r.product.id} className={`group flex flex-col md:flex-row gap-4 p-4 rounded-2xl border transition-all hover:shadow-card ${i === 0 ? 'border-accent bg-accent/5' : 'border-border bg-card hover:border-accent/30'}`}>
                       <div className="flex-shrink-0 w-24 h-24 bg-secondary/50 rounded-xl overflow-hidden">
-                        <img src={r.product.images[0]} alt={r.product.name} className="w-full h-full object-cover" />
+                        <img
+                          src={previewImage}
+                          alt={r.product.name}
+                          className="w-full h-full object-contain p-1"
+                          onError={(event) => applyProductImageFallback(event.currentTarget)}
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">

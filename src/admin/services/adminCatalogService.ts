@@ -358,6 +358,13 @@ async function uploadImageToStorageBucket(bucketId: string, filePath: string, fi
   }
 
   if (upload.error) {
+    const uploadErrorText = [upload.error.message, upload.error.name].filter(Boolean).join(" ").toLowerCase();
+    if (uploadErrorText.includes("row-level security") || uploadErrorText.includes("policy")) {
+      throw new Error(
+        `No se pudo subir el archivo al bucket ${bucketId} por permisos de Storage (RLS). Verifica las politicas de insert/update para admins.`,
+      );
+    }
+
     throw new Error(
       `No se pudo subir el archivo al bucket ${bucketId}. Ejecuta las migraciones de Supabase para crear buckets y politicas de Storage.`,
     );

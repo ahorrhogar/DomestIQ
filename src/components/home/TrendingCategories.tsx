@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { categoryService, productService } from '@/services';
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const TrendingCategories = () => {
   const categories = categoryService.getAllCategories();
@@ -74,10 +75,11 @@ const TrendingCategories = () => {
                 <div className="w-[100px] h-[100px] rounded-full bg-secondary/80 overflow-hidden mb-2.5 group-hover:ring-2 group-hover:ring-accent/50 transition-all duration-300">
                   {topProduct ? (
                     <img
-                      src={topProduct.images[0]}
+                      src={topProduct.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK}
                       alt={category.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      className="w-full h-full object-contain p-2"
                       loading="lazy"
+                      onError={(event) => applyProductImageFallback(event.currentTarget)}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted-foreground text-2xl">
@@ -106,10 +108,11 @@ const TrendingCategories = () => {
                     >
                       <div className="w-[100px] h-[100px] rounded-full bg-secondary/80 overflow-hidden mb-2.5 group-hover:ring-2 group-hover:ring-accent/50 transition-all duration-300">
                         <img
-                          src={subProduct.images[0]}
+                          src={subProduct.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK}
                           alt={sub.name}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          className="w-full h-full object-contain p-2"
                           loading="lazy"
+                          onError={(event) => applyProductImageFallback(event.currentTarget)}
                         />
                       </div>
                       <span className="text-xs font-medium text-foreground text-center leading-tight group-hover:text-accent transition-colors">

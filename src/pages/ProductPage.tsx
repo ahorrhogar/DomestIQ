@@ -18,6 +18,7 @@ import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import type { Merchant } from '@/domain/catalog/types';
 import { extractDomainFromAffiliateUrl, isAffiliateUrlAllowed } from '@/infrastructure/security/affiliateUrl';
 import { toast } from 'sonner';
+import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const MerchantLogo = ({ merchant }: { merchant: Merchant }) => {
   const [imageError, setImageError] = useState(false);
@@ -106,7 +107,7 @@ const ProductPage = () => {
   const galleryImages = product.images.filter(Boolean);
   const hasMultipleImages = galleryImages.length > 1;
   const clampedImageIndex = Math.min(selectedImageIndex, Math.max(0, galleryImages.length - 1));
-  const selectedImage = galleryImages[clampedImageIndex] || '';
+  const selectedImage = galleryImages[clampedImageIndex] || PRODUCT_IMAGE_FALLBACK;
   const visibleSpecs = showAllSpecs ? product.specs : product.specs.slice(0, 4);
 
   const goToPrevImage = () => {
@@ -156,7 +157,12 @@ const ProductPage = () => {
             <div className="space-y-3">
               <div className="bg-secondary/30 rounded-2xl p-8 flex items-center justify-center aspect-square relative overflow-hidden">
                 {selectedImage ? (
-                  <img src={selectedImage} alt={`${product.name} - imagen ${clampedImageIndex + 1}`} className="h-full w-full object-contain rounded-lg" />
+                  <img
+                    src={selectedImage}
+                    alt={`${product.name} - imagen ${clampedImageIndex + 1}`}
+                    className="h-full w-full object-contain rounded-lg"
+                    onError={(event) => applyProductImageFallback(event.currentTarget)}
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center rounded-lg bg-secondary/60 text-sm text-muted-foreground">
                     No hay imagen disponible
@@ -229,7 +235,12 @@ const ProductPage = () => {
                       className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border-2 transition ${index === clampedImageIndex ? 'border-accent shadow-sm' : 'border-border hover:border-accent/60'}`}
                       aria-label={`Ver imagen ${index + 1}`}
                     >
-                      <img src={image} alt={`${product.name} miniatura ${index + 1}`} className="h-full w-full object-cover" />
+                      <img
+                        src={image || PRODUCT_IMAGE_FALLBACK}
+                        alt={`${product.name} miniatura ${index + 1}`}
+                        className="h-full w-full object-contain p-1"
+                        onError={(event) => applyProductImageFallback(event.currentTarget)}
+                      />
                     </button>
                   ))}
                 </div>
