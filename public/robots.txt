@@ -3,7 +3,7 @@ Allow: /
 Disallow: /api/
 Disallow: /admin/
 
-Sitemap: https://domestiq.es/sitemap.xml
+Sitemap: https://homara.es/sitemap.xml
 
 User-agent: Googlebot
 Allow: /

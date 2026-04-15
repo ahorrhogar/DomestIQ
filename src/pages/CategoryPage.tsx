@@ -385,7 +385,7 @@ const CategoryPage = () => {
           <div className="max-w-3xl">
             <h3 className="font-display text-lg font-bold mb-2">Compara precios de {category.name.toLowerCase()} en España</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              En DomestIQ encontrarás los mejores precios de {category.name.toLowerCase()} comparando ofertas de más de 200 tiendas online en España. 
+              En Homara encontrarás los mejores precios de {category.name.toLowerCase()} comparando ofertas de más de 200 tiendas online en España. 
               {category.description} Encuentra el producto perfecto al mejor precio y compra con confianza.
             </p>
           </div>

@@ -156,7 +156,7 @@ const ProductPage = () => {
             <div className="space-y-3">
               <div className="bg-secondary/30 rounded-2xl p-8 flex items-center justify-center aspect-square relative overflow-hidden">
                 {selectedImage ? (
-                  <img src={selectedImage} alt={`${product.name} - imagen ${clampedImageIndex + 1}`} className="max-w-full max-h-full object-contain rounded-lg" />
+                  <img src={selectedImage} alt={`${product.name} - imagen ${clampedImageIndex + 1}`} className="h-full w-full object-contain rounded-lg" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center rounded-lg bg-secondary/60 text-sm text-muted-foreground">
                     No hay imagen disponible

@@ -4,8 +4,9 @@ import Breadcrumb from '@/components/layout/Breadcrumb';
 import { useState } from 'react';
 import { Sparkles, ArrowRight, Search, Star, Award, DollarSign } from 'lucide-react';
 import type { AssistantPriority, AssistantResult } from '@/domain/catalog/types';
-import { Link } from 'react-router-dom';
 import { analyticsService, categoryService, productService } from '@/services';
+import ProductDestinationLink from '@/components/product/ProductDestinationLink';
+import { getProductNavigationTarget } from '@/services/productNavigationService';
 
 const styles = productService.getFilterMetadata(productService.getAllProducts()).styles;
 const priorities = [
@@ -137,39 +138,43 @@ const AssistantPage = () => {
               )}
 
               <div className="space-y-4">
-                {results.map((r, i) => (
-                  <div key={r.product.id} className={`group flex flex-col md:flex-row gap-4 p-4 rounded-2xl border transition-all hover:shadow-card ${i === 0 ? 'border-accent bg-accent/5' : 'border-border bg-card hover:border-accent/30'}`}>
-                    <div className="flex-shrink-0 w-24 h-24 bg-secondary/50 rounded-xl overflow-hidden">
-                      <img src={r.product.images[0]} alt={r.product.name} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div>
-                          {r.tag && tagLabels[r.tag] && (
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold mb-1 ${tagLabels[r.tag].className}`}>
-                              {tagLabels[r.tag].label}
-                            </span>
-                          )}
-                          <h4 className="font-semibold text-foreground group-hover:text-accent transition-colors">{r.product.name}</h4>
-                          <p className="text-xs text-muted-foreground">{r.product.brand}</p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-lg font-bold text-foreground">{r.product.minPrice.toFixed(2).replace('.', ',')} €</div>
-                          <div className="flex items-center gap-0.5">
-                            <Star className="w-3 h-3 fill-accent text-accent" />
-                            <span className="text-xs font-medium">{r.product.rating}</span>
+                {results.map((r, i) => {
+                  const navigationTarget = getProductNavigationTarget(r.product);
+
+                  return (
+                    <div key={r.product.id} className={`group flex flex-col md:flex-row gap-4 p-4 rounded-2xl border transition-all hover:shadow-card ${i === 0 ? 'border-accent bg-accent/5' : 'border-border bg-card hover:border-accent/30'}`}>
+                      <div className="flex-shrink-0 w-24 h-24 bg-secondary/50 rounded-xl overflow-hidden">
+                        <img src={r.product.images[0]} alt={r.product.name} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div>
+                            {r.tag && tagLabels[r.tag] && (
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold mb-1 ${tagLabels[r.tag].className}`}>
+                                {tagLabels[r.tag].label}
+                              </span>
+                            )}
+                            <h4 className="font-semibold text-foreground group-hover:text-accent transition-colors">{r.product.name}</h4>
+                            <p className="text-xs text-muted-foreground">{r.product.brand}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-lg font-bold text-foreground">{r.product.minPrice.toFixed(2).replace('.', ',')} €</div>
+                            <div className="flex items-center gap-0.5">
+                              <Star className="w-3 h-3 fill-accent text-accent" />
+                              <span className="text-xs font-medium">{r.product.rating}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">{r.reason}</p>
-                      <div className="mt-2">
-                        <Link to={`/producto/${r.product.slug}`} className="text-sm font-medium text-accent hover:underline flex items-center gap-1">
-                          Ver producto <ArrowRight className="w-3 h-3" />
-                        </Link>
+                        <p className="text-sm text-muted-foreground mt-1">{r.reason}</p>
+                        <div className="mt-2">
+                          <ProductDestinationLink product={r.product} className="text-sm font-medium text-accent hover:underline flex items-center gap-1">
+                            {navigationTarget.isDirectAffiliateOffer ? 'Ver oferta' : 'Ver producto'} <ArrowRight className="w-3 h-3" />
+                          </ProductDestinationLink>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

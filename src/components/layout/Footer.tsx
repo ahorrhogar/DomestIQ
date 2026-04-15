@@ -38,7 +38,7 @@ const Footer = () => {
         <div>
           <h3 className="font-semibold text-sm mb-3 text-primary-foreground/90">Información</h3>
           <ul className="space-y-1.5">
-            <li><Link to="/acerca-de" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Acerca de DomestIQ</Link></li>
+            <li><Link to="/acerca-de" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Acerca de Homara</Link></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Cómo funciona</a></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Blog</a></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Contacto</a></li>
@@ -58,8 +58,8 @@ const Footer = () => {
       </div>
 
       <div className="mt-10 pt-6 border-t border-primary-foreground/10 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-primary-foreground/50">
-        <p>© {new Date().getFullYear()} DomestIQ. Todos los derechos reservados.</p>
-        <p>Los precios y disponibilidad pueden variar. DomestIQ no vende productos directamente.</p>
+        <p>© {new Date().getFullYear()} Homara. Todos los derechos reservados.</p>
+        <p>Los precios y disponibilidad pueden variar. Homara no vende productos directamente.</p>
       </div>
     </div>
     </footer>

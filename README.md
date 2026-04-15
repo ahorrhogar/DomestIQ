@@ -1,6 +1,6 @@
-# DomestIQ Frontend (Refactored Base)
+# Homara Frontend (Refactored Base)
 
-DomestIQ is currently a Vite + React frontend, now structured as a production-ready base for a real backend migration.
+Homara is currently a Vite + React frontend, now structured as a production-ready base for a real backend migration.
 
 ## Current Goals
 

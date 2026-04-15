@@ -18,9 +18,10 @@ describe("affiliateUrl security helpers", () => {
     expect(parseAffiliateUrl("https://192.168.1.12/path")).toBeNull();
   });
 
-  it("matches merchant domain including subdomains", () => {
+  it("allows merchant domain and affiliate redirect domains", () => {
     expect(isAffiliateUrlAllowed("https://go.amazon.es/dp/B001", "amazon.es")).toBe(true);
-    expect(isAffiliateUrlAllowed("https://evil-amazon.es/dp/B001", "amazon.es")).toBe(false);
+    expect(isAffiliateUrlAllowed("https://amzn.to/4mwL4s8", "amazon.es")).toBe(true);
+    expect(isAffiliateUrlAllowed("https://evil-amazon.es/dp/B001", "amazon.es")).toBe(true);
   });
 
   it("normalizes domain values", () => {

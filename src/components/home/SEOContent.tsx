@@ -7,7 +7,7 @@ const SEOContent = () => (
         </h2>
         <div className="prose prose-sm text-muted-foreground space-y-3">
           <p>
-            <strong className="text-foreground">DomestIQ</strong> es el comparador de precios especializado en productos para el hogar en España. 
+            <strong className="text-foreground">Homara</strong> es el comparador de precios especializado en productos para el hogar en España. 
             Comparamos precios de muebles, electrodomésticos, decoración, cocina, jardín, iluminación y mucho más entre las principales tiendas online del país.
           </p>
           <p>
@@ -21,7 +21,7 @@ const SEOContent = () => (
           </p>
           <p>
             ¿No sabes qué comprar? Nuestro <strong className="text-foreground">asistente de compras inteligente</strong> te recomienda los mejores productos 
-            según tu presupuesto, estilo y necesidades. DomestIQ: compara, ahorra y compra con confianza.
+            según tu presupuesto, estilo y necesidades. Homara: compara, ahorra y compra con confianza.
           </p>
         </div>
       </div>

@@ -173,7 +173,8 @@ export default function AdminProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminProductRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
   const [isPreparingProductForImages, setIsPreparingProductForImages] = useState(false);
 
   const isDialogDirty = useMemo(() => {
@@ -181,8 +182,8 @@ export default function AdminProductsPage() {
       return false;
     }
 
-    return JSON.stringify(form) !== dialogInitialForm || Boolean(newImageUrl.trim()) || uploadFile !== null;
-  }, [dialogOpen, form, dialogInitialForm, newImageUrl, uploadFile]);
+    return JSON.stringify(form) !== dialogInitialForm || Boolean(newImageUrl.trim()) || uploadFiles.length > 0;
+  }, [dialogOpen, form, dialogInitialForm, newImageUrl, uploadFiles]);
 
   const brandsQuery = useQuery({ queryKey: ["admin-brands"], queryFn: listBrands });
   const categoriesQuery = useQuery({ queryKey: ["admin-categories"], queryFn: listCategories });
@@ -214,7 +215,8 @@ export default function AdminProductsPage() {
       setDialogOpen(false);
       setForm(INITIAL_FORM);
       setNewImageUrl("");
-      setUploadFile(null);
+      setUploadFiles([]);
+      setUploadInputKey((prev) => prev + 1);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar el producto");
@@ -258,12 +260,19 @@ export default function AdminProductsPage() {
   });
 
   const uploadImageMutation = useMutation({
-    mutationFn: (params: { productId: string; file: File }) => uploadProductImage(params.productId, params.file, false),
-    onSuccess: async () => {
+    mutationFn: async (params: { productId: string; files: File[] }) => {
+      for (const file of params.files) {
+        await uploadProductImage(params.productId, file, false);
+      }
+
+      return params.files.length;
+    },
+    onSuccess: async (uploadedCount) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-product-images", form.id] });
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      setUploadFile(null);
-      toast.success("Imagen subida");
+      setUploadFiles([]);
+      setUploadInputKey((prev) => prev + 1);
+      toast.success(uploadedCount > 1 ? `${uploadedCount} imagenes subidas` : "Imagen subida");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo subir imagen");
@@ -318,7 +327,8 @@ export default function AdminProductsPage() {
     setForm(INITIAL_FORM);
     setDialogInitialForm(JSON.stringify(INITIAL_FORM));
     setNewImageUrl("");
-    setUploadFile(null);
+    setUploadFiles([]);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -343,7 +353,8 @@ export default function AdminProductsPage() {
     setForm(nextForm);
     setDialogInitialForm(JSON.stringify(nextForm));
     setNewImageUrl("");
-    setUploadFile(null);
+    setUploadFiles([]);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -901,17 +912,19 @@ export default function AdminProductsPage() {
 
                 <div className="flex flex-col gap-2 md:flex-row">
                   <Input
+                    key={uploadInputKey}
                     className="min-w-0 flex-1"
                     type="file"
                     accept="image/*"
-                    onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                    multiple
+                    onChange={(event) => setUploadFiles(Array.from(event.target.files || []))}
                   />
                   <Button
                     variant="outline"
                     className="md:shrink-0"
-                    disabled={!uploadFile || uploadImageMutation.isPending || isPreparingProductForImages}
+                    disabled={!uploadFiles.length || uploadImageMutation.isPending || isPreparingProductForImages}
                     onClick={async () => {
-                      if (!uploadFile) {
+                      if (!uploadFiles.length) {
                         return;
                       }
 
@@ -920,13 +933,21 @@ export default function AdminProductsPage() {
                         return;
                       }
 
-                      uploadImageMutation.mutate({ productId, file: uploadFile });
+                      uploadImageMutation.mutate({ productId, files: uploadFiles });
                     }}
                   >
                     <Upload className="mr-2 h-4 w-4" />
-                    Subir
+                    {uploadImageMutation.isPending
+                      ? "Subiendo..."
+                      : uploadFiles.length > 1
+                        ? `Subir ${uploadFiles.length} archivos`
+                        : "Subir archivo"}
                   </Button>
                 </div>
+
+                {uploadFiles.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">{uploadFiles.length} archivo(s) seleccionado(s) para subir.</p>
+                ) : null}
 
                 <div className="space-y-2">
                   {(productImagesQuery.data || []).map((image) => (

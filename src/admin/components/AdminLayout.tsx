@@ -58,7 +58,7 @@ export function AdminLayout() {
             <ShieldCheck className="h-5 w-5 text-primary" />
             <div>
               <p className="text-sm font-semibold leading-none">Panel Admin</p>
-              <p className="text-xs text-muted-foreground">Hogar Magico</p>
+              <p className="text-xs text-muted-foreground">Homara</p>
             </div>
           </div>
           <Separator />

@@ -73,8 +73,8 @@ interface FormState {
   id?: string;
   productId: string;
   merchantId: string;
-  price: number;
-  oldPrice: number;
+  price: string;
+  oldPrice: string;
   url: string;
   stock: boolean;
   isActive: boolean;
@@ -86,8 +86,8 @@ interface FormState {
 const INITIAL_FORM: FormState = {
   productId: "",
   merchantId: "",
-  price: 0,
-  oldPrice: 0,
+  price: "",
+  oldPrice: "0",
   url: "",
   stock: true,
   isActive: true,
@@ -109,6 +109,42 @@ const SYNC_LABELS: Record<OfferSyncStatus, string> = {
   stale: "Desactualizada",
   error: "Error",
 };
+
+function parseDecimalInput(value: string): number | null {
+  const raw = String(value || "").trim().replace(/\s+/g, "");
+
+  if (!raw) {
+    return null;
+  }
+
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+
+  let normalized = raw;
+  if (hasComma && hasDot) {
+    const lastComma = raw.lastIndexOf(",");
+    const lastDot = raw.lastIndexOf(".");
+    const decimalSeparator = lastComma > lastDot ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+
+    normalized = raw.split(thousandsSeparator).join("").replace(decimalSeparator, ".");
+  } else {
+    normalized = raw.replace(",", ".");
+  }
+
+  normalized = normalized.replace(/[^\d.-]/g, "");
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  if (parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
 
 function syncBadgeVariant(status: OfferSyncStatus): "default" | "secondary" | "destructive" | "outline" {
   if (status === "error") {
@@ -378,8 +414,8 @@ export default function AdminOffersPage() {
       id: offer.id,
       productId: offer.productId,
       merchantId: offer.merchantId,
-      price: offer.price,
-      oldPrice: offer.oldPrice || 0,
+      price: String(offer.price),
+      oldPrice: String(offer.oldPrice || 0),
       url: offer.url,
       stock: offer.stock,
       isActive: offer.isActive,
@@ -417,8 +453,8 @@ export default function AdminOffersPage() {
   const openPriceDialog = (offer: AdminOfferRecord) => {
     const nextDraft = {
       offerId: offer.id,
-      price: offer.currentPrice,
-      oldPrice: offer.oldPrice || offer.currentPrice,
+      price: String(offer.currentPrice),
+      oldPrice: String(offer.oldPrice || offer.currentPrice),
       stock: offer.stock,
     };
     setPriceDraft(nextDraft);
@@ -447,7 +483,14 @@ export default function AdminOffersPage() {
   };
 
   const onSave = async () => {
-    const parsed = schema.safeParse(form);
+    const parsedPrice = parseDecimalInput(form.price);
+    const parsedOldPrice = parseDecimalInput(form.oldPrice);
+
+    const parsed = schema.safeParse({
+      ...form,
+      price: parsedPrice,
+      oldPrice: parsedOldPrice ?? 0,
+    });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message || "Formulario invalido");
       return;
@@ -473,10 +516,23 @@ export default function AdminOffersPage() {
       return;
     }
 
+    const parsedPrice = parseDecimalInput(priceDraft.price);
+    const parsedOldPrice = parseDecimalInput(priceDraft.oldPrice);
+
+    if (!parsedPrice || parsedPrice <= 0) {
+      toast.error("Precio invalido");
+      return;
+    }
+
+    if (parsedOldPrice === null) {
+      toast.error("Precio anterior invalido");
+      return;
+    }
+
     await quickPriceMutation.mutateAsync({
       offerId: priceDraft.offerId,
-      price: priceDraft.price,
-      oldPrice: priceDraft.oldPrice,
+      price: parsedPrice,
+      oldPrice: parsedOldPrice,
       stock: priceDraft.stock,
     });
   };
@@ -899,11 +955,10 @@ export default function AdminOffersPage() {
               <Label htmlFor="offer-price">Precio</Label>
               <Input
                 id="offer-price"
-                type="number"
-                min={0}
-                step="0.01"
-                value={String(form.price)}
-                onChange={(event) => setForm((prev) => ({ ...prev, price: Number(event.target.value) || 0 }))}
+                type="text"
+                inputMode="decimal"
+                value={form.price}
+                onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
               />
             </div>
 
@@ -911,11 +966,10 @@ export default function AdminOffersPage() {
               <Label htmlFor="offer-old-price">Precio anterior</Label>
               <Input
                 id="offer-old-price"
-                type="number"
-                min={0}
-                step="0.01"
-                value={String(form.oldPrice)}
-                onChange={(event) => setForm((prev) => ({ ...prev, oldPrice: Number(event.target.value) || 0 }))}
+                type="text"
+                inputMode="decimal"
+                value={form.oldPrice}
+                onChange={(event) => setForm((prev) => ({ ...prev, oldPrice: event.target.value }))}
               />
             </div>
 
@@ -993,17 +1047,15 @@ export default function AdminOffersPage() {
               <Label htmlFor="quick-price">Precio actual</Label>
               <Input
                 id="quick-price"
-                type="number"
-                min={0}
-                step="0.01"
-                value={String(priceDraft?.price ?? 0)}
+                type="text"
+                inputMode="decimal"
+                value={priceDraft?.price ?? ""}
                 onChange={(event) => {
-                  const next = Number(event.target.value);
                   setPriceDraft((prev) =>
                     prev
                       ? {
                           ...prev,
-                          price: Number.isFinite(next) ? Math.max(0, next) : 0,
+                          price: event.target.value,
                         }
                       : prev,
                   );
@@ -1015,17 +1067,15 @@ export default function AdminOffersPage() {
               <Label htmlFor="quick-old-price">Precio anterior</Label>
               <Input
                 id="quick-old-price"
-                type="number"
-                min={0}
-                step="0.01"
-                value={String(priceDraft?.oldPrice ?? 0)}
+                type="text"
+                inputMode="decimal"
+                value={priceDraft?.oldPrice ?? ""}
                 onChange={(event) => {
-                  const next = Number(event.target.value);
                   setPriceDraft((prev) =>
                     prev
                       ? {
                           ...prev,
-                          oldPrice: Number.isFinite(next) ? Math.max(0, next) : 0,
+                          oldPrice: event.target.value,
                         }
                       : prev,
                   );

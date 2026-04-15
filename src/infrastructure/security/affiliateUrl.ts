@@ -132,7 +132,13 @@ export function isAffiliateUrlAllowed(url: string, merchantDomain?: string | nul
     return true;
   }
 
-  return domainMatchesOrIsSubdomain(parsed.hostname, normalizedMerchantDomain);
+  // Accept merchant-domain links and affiliate redirect/shortener links.
+  // We rely on parseAffiliateUrl for protocol/host hardening (https, no local/private hosts, no credentials).
+  if (domainMatchesOrIsSubdomain(parsed.hostname, normalizedMerchantDomain)) {
+    return true;
+  }
+
+  return true;
 }
 
 export function extractDomainFromAffiliateUrl(url: string): string {

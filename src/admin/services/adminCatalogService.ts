@@ -194,6 +194,14 @@ const ADMIN_RATE_LIMIT_POLICIES = {
   csvImport: { scope: "admin:import:csv", maxRequests: 6, windowSeconds: 60, blockSeconds: 600 },
 } as const;
 
+const IMAGE_UPLOAD_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+const IMAGE_UPLOAD_ALLOWED_TYPE_SET = new Set(IMAGE_UPLOAD_ALLOWED_TYPES);
+const IMAGE_UPLOAD_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+const PRODUCT_IMAGES_BUCKET = "product-images";
+const BRAND_IMAGES_BUCKET = "brand-images";
+const CATEGORY_IMAGES_BUCKET = "category-images";
+const MERCHANT_LOGOS_BUCKET = "merchant-logos";
+
 const OFFER_SOURCE_VALUES: OfferSourceType[] = ["manual", "api", "feed", "future_auto"];
 const OFFER_UPDATE_MODE_VALUES: OfferUpdateMode[] = ["manual", "auto", "hybrid"];
 const OFFER_SYNC_STATUS_VALUES: OfferSyncStatus[] = ["ok", "stale", "error", "pending"];
@@ -290,6 +298,72 @@ function sanitizeAffiliateOfferUrl(value: string, merchantDomain?: string | null
   }
 
   return parsed.toString();
+}
+
+function randomImageFileName(file: File): string {
+  const extensionRaw = file.name.includes(".") ? file.name.split(".").pop() || "jpg" : "jpg";
+  const extension = sanitizeText(extensionRaw.toLowerCase(), 10) || "jpg";
+  return `${Date.now()}-${Math.round(Math.random() * 1_000_000)}.${extension}`;
+}
+
+function validateImageUploadFile(file: File): void {
+  if (!IMAGE_UPLOAD_ALLOWED_TYPE_SET.has(file.type as (typeof IMAGE_UPLOAD_ALLOWED_TYPES)[number])) {
+    throw new Error("Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF");
+  }
+
+  if (file.size > IMAGE_UPLOAD_MAX_SIZE_BYTES) {
+    throw new Error("La imagen supera el limite de 10MB");
+  }
+}
+
+async function ensureStorageBucketExists(bucketId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const createResult = await supabase.storage.createBucket(bucketId, {
+    public: true,
+    fileSizeLimit: IMAGE_UPLOAD_MAX_SIZE_BYTES,
+    allowedMimeTypes: [...IMAGE_UPLOAD_ALLOWED_TYPES],
+  });
+
+  if (!createResult.error) {
+    return;
+  }
+
+  const errorText = [createResult.error.message, createResult.error.name].filter(Boolean).join(" ").toLowerCase();
+  const alreadyExists =
+    errorText.includes("already") ||
+    errorText.includes("exists") ||
+    errorText.includes("duplicate") ||
+    errorText.includes("409");
+
+  if (alreadyExists) {
+    return;
+  }
+}
+
+async function uploadImageToStorageBucket(bucketId: string, filePath: string, file: File): Promise<string> {
+  const supabase = getSupabaseClient();
+
+  let upload = await supabase.storage
+    .from(bucketId)
+    .upload(filePath, file, { upsert: false, contentType: file.type || "image/jpeg" });
+
+  if (upload.error) {
+    const uploadErrorText = [upload.error.message, upload.error.name].filter(Boolean).join(" ").toLowerCase();
+    if (uploadErrorText.includes("bucket") && (uploadErrorText.includes("not") || uploadErrorText.includes("missing"))) {
+      await ensureStorageBucketExists(bucketId);
+      upload = await supabase.storage
+        .from(bucketId)
+        .upload(filePath, file, { upsert: false, contentType: file.type || "image/jpeg" });
+    }
+  }
+
+  if (upload.error) {
+    throw new Error(
+      `No se pudo subir el archivo al bucket ${bucketId}. Ejecuta las migraciones de Supabase para crear buckets y politicas de Storage.`,
+    );
+  }
+
+  return supabase.storage.from(bucketId).getPublicUrl(upload.data.path).data.publicUrl;
 }
 
 function parseSpecsObject(value: unknown): Record<string, unknown> {
@@ -1778,55 +1852,28 @@ export async function deleteProductImage(imageId: string): Promise<void> {
 
 export async function uploadProductImage(productId: string, file: File, isPrimary: boolean): Promise<AdminProductImageRecord> {
   await enforceAdminRateLimit("imageUpload");
-  const supabase = getSupabaseClient();
-  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-  const maxFileSizeBytes = 10 * 1024 * 1024;
 
   try {
-    if (!allowedTypes.has(file.type)) {
+    try {
+      validateImageUploadFile(file);
+    } catch (validationError) {
       await safeLogAdminAction({
         action: "product.image.validation_failed",
-        entityType: "product",
-        entityId: productId,
-        payload: { reason: "invalid_mime", mimeType: file.type || "unknown" },
-      });
-      throw new Error("Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF");
-    }
-
-    if (file.size > maxFileSizeBytes) {
-      await safeLogAdminAction({
-        action: "product.image.validation_failed",
-        entityType: "product",
-        entityId: productId,
-        payload: { reason: "file_too_large", fileSize: file.size },
-      });
-      throw new Error("La imagen supera el limite de 10MB");
-    }
-
-    const extension = file.name.includes(".") ? file.name.split(".").pop() || "jpg" : "jpg";
-    const fileName = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}.${sanitizeText(extension, 10)}`;
-    const filePath = `${productId}/${fileName}`;
-
-    const upload = await supabase.storage
-      .from("product-images")
-      .upload(filePath, file, { upsert: false, contentType: file.type || "image/jpeg" });
-
-    if (upload.error) {
-      await safeLogAdminAction({
-        action: "product.image.storage_error",
         entityType: "product",
         entityId: productId,
         payload: {
-          filePath,
-          ...toAuditErrorPayload(upload.error),
+          reason: "invalid_file",
+          mimeType: file.type || "unknown",
+          fileSize: file.size,
+          ...toAuditErrorPayload(validationError),
         },
       });
-      throw new Error(
-        "No se pudo subir el archivo al bucket product-images. Crea el bucket en Supabase Storage y concede permisos de lectura publica.",
-      );
+      throw validationError;
     }
 
-    const publicUrl = supabase.storage.from("product-images").getPublicUrl(upload.data.path).data.publicUrl;
+    const fileName = randomImageFileName(file);
+    const filePath = `${productId}/${fileName}`;
+    const publicUrl = await uploadImageToStorageBucket(PRODUCT_IMAGES_BUCKET, filePath, file);
     const image = await addProductImage(productId, publicUrl, isPrimary);
 
     await safeLogAdminAction({
@@ -1849,6 +1896,99 @@ export async function uploadProductImage(productId: string, file: File, isPrimar
       entityId: productId,
       payload: {
         operation: "upload",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function uploadBrandLogoImage(file: File): Promise<string> {
+  await enforceAdminRateLimit("imageUpload");
+
+  try {
+    validateImageUploadFile(file);
+    const publicUrl = await uploadImageToStorageBucket(BRAND_IMAGES_BUCKET, `brands/${randomImageFileName(file)}`, file);
+
+    await safeLogAdminAction({
+      action: "brand.image.upload",
+      entityType: "brand",
+      payload: {
+        bucket: BRAND_IMAGES_BUCKET,
+        mimeType: file.type || null,
+        fileSize: file.size,
+      },
+    });
+
+    return publicUrl;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "brand.error",
+      entityType: "brand",
+      payload: {
+        operation: "image_upload",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function uploadCategoryImageFile(file: File): Promise<string> {
+  await enforceAdminRateLimit("imageUpload");
+
+  try {
+    validateImageUploadFile(file);
+    const publicUrl = await uploadImageToStorageBucket(CATEGORY_IMAGES_BUCKET, `categories/${randomImageFileName(file)}`, file);
+
+    await safeLogAdminAction({
+      action: "category.image.upload",
+      entityType: "category",
+      payload: {
+        bucket: CATEGORY_IMAGES_BUCKET,
+        mimeType: file.type || null,
+        fileSize: file.size,
+      },
+    });
+
+    return publicUrl;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "category.error",
+      entityType: "category",
+      payload: {
+        operation: "image_upload",
+        ...toAuditErrorPayload(error),
+      },
+    });
+    throw error;
+  }
+}
+
+export async function uploadMerchantLogoImage(file: File): Promise<string> {
+  await enforceAdminRateLimit("imageUpload");
+
+  try {
+    validateImageUploadFile(file);
+    const publicUrl = await uploadImageToStorageBucket(MERCHANT_LOGOS_BUCKET, `merchants/${randomImageFileName(file)}`, file);
+
+    await safeLogAdminAction({
+      action: "merchant.image.upload",
+      entityType: "merchant",
+      payload: {
+        bucket: MERCHANT_LOGOS_BUCKET,
+        mimeType: file.type || null,
+        fileSize: file.size,
+      },
+    });
+
+    return publicUrl;
+  } catch (error) {
+    await safeLogAdminAction({
+      action: "merchant.error",
+      entityType: "merchant",
+      payload: {
+        operation: "image_upload",
         ...toAuditErrorPayload(error),
       },
     });
@@ -2038,7 +2178,7 @@ export async function upsertOffer(input: OfferMutationInput): Promise<AdminOffer
         entityId: input.id,
         payload: { reason: "invalid_or_disallowed_affiliate_url", merchantDomain: merchantDomain || null },
       });
-      throw new Error("La oferta requiere una URL HTTPS valida y del dominio permitido para la tienda");
+      throw new Error("La oferta requiere una URL HTTPS valida");
     }
 
     if (!merchantDomain) {

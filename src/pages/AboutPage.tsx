@@ -8,12 +8,12 @@ const AboutPage = () => (
     <Header />
     <main className="flex-1">
       <div className="container mx-auto px-4">
-        <Breadcrumb items={[{ label: 'Acerca de DomestIQ' }]} />
+        <Breadcrumb items={[{ label: 'Acerca de Homara' }]} />
 
         {/* Hero */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-            DomestIQ — tu comparador de precios de hogar
+            Homara — tu comparador de precios de hogar
           </h1>
           <p className="text-lg text-muted-foreground leading-relaxed">
             Somos el comparador de precios especializado en productos para el hogar más completo de España.
@@ -41,7 +41,7 @@ const AboutPage = () => (
 
         {/* Numbers */}
         <section className="mb-16 bg-gradient-hero rounded-2xl p-10 text-center">
-          <h2 className="font-display text-2xl font-bold text-primary-foreground mb-8">DomestIQ en números</h2>
+          <h2 className="font-display text-2xl font-bold text-primary-foreground mb-8">Homara en números</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
               { num: '+15.000', label: 'Productos comparados' },
@@ -81,7 +81,7 @@ const AboutPage = () => (
           <h2 className="font-display text-2xl font-bold text-foreground mb-4">¿Cómo funcionamos?</h2>
           <div className="prose prose-sm text-muted-foreground space-y-3">
             <p>
-              <strong className="text-foreground">DomestIQ</strong> es un comparador de precios independiente. No vendemos productos directamente.
+              <strong className="text-foreground">Homara</strong> es un comparador de precios independiente. No vendemos productos directamente.
               Nuestro servicio consiste en recopilar, organizar y comparar ofertas de las principales tiendas online de España para que tú puedas
               encontrar el mejor precio sin esfuerzo.
             </p>

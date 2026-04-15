@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
 import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
@@ -11,6 +11,7 @@ import { exportRowsToExcel } from "@/admin/utils/excel";
 import {
   deleteCategory,
   listCategories,
+  uploadCategoryImageFile,
   upsertCategory,
 } from "@/admin/services/adminCatalogService";
 import type { AdminCategoryRecord } from "@/admin/types";
@@ -80,14 +81,16 @@ export default function AdminCategoriesPage() {
   const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminCategoryRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
 
   const isDialogDirty = useMemo(() => {
     if (!dialogOpen) {
       return false;
     }
 
-    return JSON.stringify(form) !== dialogInitialForm;
-  }, [dialogOpen, form, dialogInitialForm]);
+    return JSON.stringify(form) !== dialogInitialForm || uploadFile !== null;
+  }, [dialogOpen, form, dialogInitialForm, uploadFile]);
 
   const categoriesQuery = useQuery({
     queryKey: ["admin-categories"],
@@ -101,6 +104,8 @@ export default function AdminCategoriesPage() {
       toast.success(form.id ? "Categoria actualizada" : "Categoria creada");
       setDialogOpen(false);
       setForm(INITIAL_FORM);
+      setUploadFile(null);
+      setUploadInputKey((prev) => prev + 1);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar la categoria");
@@ -116,6 +121,19 @@ export default function AdminCategoriesPage() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo eliminar la categoria");
+    },
+  });
+
+  const uploadImageMutation = useMutation({
+    mutationFn: uploadCategoryImageFile,
+    onSuccess: (url) => {
+      setForm((prev) => ({ ...prev, imageUrl: url }));
+      setUploadFile(null);
+      setUploadInputKey((prev) => prev + 1);
+      toast.success("Imagen subida y asignada");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo subir la imagen");
     },
   });
 
@@ -139,6 +157,8 @@ export default function AdminCategoriesPage() {
   const openCreate = () => {
     setForm(INITIAL_FORM);
     setDialogInitialForm(JSON.stringify(INITIAL_FORM));
+    setUploadFile(null);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -155,6 +175,8 @@ export default function AdminCategoriesPage() {
     };
     setForm(nextForm);
     setDialogInitialForm(JSON.stringify(nextForm));
+    setUploadFile(null);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -438,6 +460,32 @@ export default function AdminCategoriesPage() {
                 onChange={(event) => setForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
                 placeholder="https://..."
               />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="category-image-file">Subir imagen desde archivo</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  key={uploadInputKey}
+                  id="category-image-file"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!uploadFile || uploadImageMutation.isPending}
+                  onClick={() => {
+                    if (uploadFile) {
+                      uploadImageMutation.mutate(uploadFile);
+                    }
+                  }}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {uploadImageMutation.isPending ? "Subiendo..." : "Subir"}
+                </Button>
+              </div>
             </div>
 
             <div className="sm:col-span-2 flex items-center justify-between rounded-md border border-border px-3 py-2">

@@ -1,4 +1,4 @@
-const allowedHosts = new Set<string>(["localhost", "domestiq.es", "www.domestiq.es"]);
+const allowedHosts = new Set<string>(["localhost", "homara.es", "www.homara.es"]);
 
 export function isSafeInternalPath(path: string): boolean {
   return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\");

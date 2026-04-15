@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { BulkActionsBar } from "@/admin/components/BulkActionsBar";
 import { useBulkSelection } from "@/admin/hooks/useBulkSelection";
 import { AdminPageHeader } from "@/admin/components/AdminPageHeader";
 import { formatDate } from "@/admin/utils/format";
 import { exportRowsToExcel } from "@/admin/utils/excel";
-import { deleteBrand, listBrands, upsertBrand } from "@/admin/services/adminCatalogService";
+import { deleteBrand, listBrands, upsertBrand, uploadBrandLogoImage } from "@/admin/services/adminCatalogService";
 import type { AdminBrandRecord } from "@/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,14 +63,16 @@ export default function AdminBrandsPage() {
   const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminBrandRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
 
   const isDialogDirty = useMemo(() => {
     if (!dialogOpen) {
       return false;
     }
 
-    return JSON.stringify(form) !== dialogInitialForm;
-  }, [dialogOpen, form, dialogInitialForm]);
+    return JSON.stringify(form) !== dialogInitialForm || uploadFile !== null;
+  }, [dialogOpen, form, dialogInitialForm, uploadFile]);
 
   const brandsQuery = useQuery({
     queryKey: ["admin-brands"],
@@ -84,6 +86,8 @@ export default function AdminBrandsPage() {
       toast.success(form.id ? "Marca actualizada" : "Marca creada");
       setDialogOpen(false);
       setForm(INITIAL_FORM);
+      setUploadFile(null);
+      setUploadInputKey((prev) => prev + 1);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar la marca");
@@ -102,6 +106,19 @@ export default function AdminBrandsPage() {
     },
   });
 
+  const uploadLogoMutation = useMutation({
+    mutationFn: uploadBrandLogoImage,
+    onSuccess: (url) => {
+      setForm((prev) => ({ ...prev, logoUrl: url }));
+      setUploadFile(null);
+      setUploadInputKey((prev) => prev + 1);
+      toast.success("Logo subido y asignado");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo subir el logo");
+    },
+  });
+
   const filteredRows = useMemo(() => {
     const safeSearch = search.trim().toLowerCase();
 
@@ -116,6 +133,8 @@ export default function AdminBrandsPage() {
   const openCreate = () => {
     setForm(INITIAL_FORM);
     setDialogInitialForm(JSON.stringify(INITIAL_FORM));
+    setUploadFile(null);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -128,6 +147,8 @@ export default function AdminBrandsPage() {
     };
     setForm(nextForm);
     setDialogInitialForm(JSON.stringify(nextForm));
+    setUploadFile(null);
+    setUploadInputKey((prev) => prev + 1);
     setDialogOpen(true);
   };
 
@@ -343,6 +364,32 @@ export default function AdminBrandsPage() {
                 onChange={(event) => setForm((prev) => ({ ...prev, logoUrl: event.target.value }))}
                 placeholder="https://..."
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="brand-logo-file">Subir logo desde archivo</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  key={uploadInputKey}
+                  id="brand-logo-file"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!uploadFile || uploadLogoMutation.isPending}
+                  onClick={() => {
+                    if (uploadFile) {
+                      uploadLogoMutation.mutate(uploadFile);
+                    }
+                  }}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {uploadLogoMutation.isPending ? "Subiendo..." : "Subir"}
+                </Button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">

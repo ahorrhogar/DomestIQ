@@ -4,6 +4,7 @@ import Hero from '@/components/home/Hero';
 import TrendingCategories from '@/components/home/TrendingCategories';
 import PromoBanner from '@/components/home/PromoBanner';
 import { ProductGrid } from '@/components/product/ProductCard';
+import ProductDestinationLink from '@/components/product/ProductDestinationLink';
 import TrustBlock from '@/components/home/TrustBlock';
 import SEOContent from '@/components/home/SEOContent';
 import { analyticsService, productService } from '@/services';
@@ -76,7 +77,11 @@ const Index = () => {
                 {topProducts.map((p) => {
                   const realDiscount = computeDiscountPercent(p);
                   return (
-                    <Link key={p.id} to={`/producto/${p.slug}`} className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300">
+                    <ProductDestinationLink
+                      key={p.id}
+                      product={p}
+                      className="group bg-card rounded-xl border border-border p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300"
+                    >
                       {realDiscount ? (
                         <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-deal text-deal-foreground">
                           -{realDiscount}%
@@ -101,7 +106,7 @@ const Index = () => {
                           {p.originalPrice.toFixed(2).replace('.', ',')} €
                         </p>
                       ) : null}
-                    </Link>
+                    </ProductDestinationLink>
                   );
                 })}
               </div>
@@ -167,7 +172,7 @@ const Index = () => {
         {/* How it works - compact */}
         <section className="py-12 bg-secondary/50">
           <div className="container mx-auto px-4">
-            <h2 className="font-display text-xl md:text-2xl font-bold text-foreground text-center mb-8">¿Cómo funciona DomestIQ?</h2>
+            <h2 className="font-display text-xl md:text-2xl font-bold text-foreground text-center mb-8">¿Cómo funciona Homara?</h2>
             <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
               {[
                 { icon: <Zap className="w-6 h-6" />, title: 'Busca tu producto', desc: 'Explora miles de productos organizados por categoría.' },

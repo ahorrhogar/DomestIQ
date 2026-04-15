@@ -2,14 +2,15 @@ import { Link } from 'react-router-dom';
 import { Product } from '@/domain/catalog/types';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Star, ArrowRight, Tag, TrendingDown, Sparkles } from 'lucide-react';
+import ProductDestinationLink from '@/components/product/ProductDestinationLink';
 
 const ProductCard = ({ product }: { product: Product }) => {
   const realDiscount = computeDiscountPercent(product);
   const showDiscount = realDiscount && realDiscount > 0 && realDiscount <= 60;
 
   return (
-    <Link
-      to={`/producto/${product.slug}`}
+    <ProductDestinationLink
+      product={product}
       className="group bg-card rounded-2xl border border-border shadow-card hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col"
     >
       {/* Image */}
@@ -71,7 +72,7 @@ const ProductCard = ({ product }: { product: Product }) => {
           </p>
         </div>
       </div>
-    </Link>
+    </ProductDestinationLink>
   );
 };
 
