@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Sparkles, TrendingDown } from 'lucide-react';
 
-const HERO_MASCOT_IMAGE = '/homara-mascot.png';
+const HERO_MASCOT_IMAGE = '/homara-mascot.webp';
 
 const Hero = () => (
   <section className="relative overflow-hidden bg-gradient-hero">
