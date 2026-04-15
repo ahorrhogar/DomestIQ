@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -55,11 +55,18 @@ export function AdminLayout() {
       <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 lg:grid-cols-[250px_1fr]">
         <aside className="border-r border-border bg-background">
           <div className="flex h-16 items-center gap-2 px-4">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold leading-none">Panel Admin</p>
-              <p className="text-xs text-muted-foreground">Homara</p>
-            </div>
+            <Link to="/admin" className="flex items-center gap-2">
+              <img
+                src="/homara-logo.svg"
+                alt="Homara"
+                className="h-7 w-auto"
+                loading="eager"
+                decoding="async"
+              />
+              <div>
+                <p className="text-sm font-semibold leading-none">Panel Admin</p>
+              </div>
+            </Link>
           </div>
           <Separator />
 
