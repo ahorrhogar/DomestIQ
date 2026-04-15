@@ -14,6 +14,13 @@ import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
+function normalizeCategoryLookup(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 const Index = () => {
   const categories = categoryService.getAllCategories();
   const [homeCollections, setHomeCollections] = useState(() => ({
@@ -57,8 +64,20 @@ const Index = () => {
   }, [categories]);
 
   const gardenExteriorHref = useMemo(() => {
+    const preferredSlugs = ['jardin-y-exterior', 'jardin-exterior'];
+
+    for (const preferredSlug of preferredSlugs) {
+      const exact = categories.find(
+        (category) => normalizeCategoryLookup(category.slug) === preferredSlug,
+      );
+
+      if (exact) {
+        return `/categoria/${exact.slug}`;
+      }
+    }
+
     const match = categories.find((category) => {
-      const normalized = `${category.name} ${category.slug}`.toLowerCase();
+      const normalized = normalizeCategoryLookup(`${category.name} ${category.slug}`);
       return normalized.includes('jardin') && normalized.includes('exterior');
     });
 
@@ -66,12 +85,27 @@ const Index = () => {
       return `/categoria/${match.slug}`;
     }
 
+    const bySubcategory = categories.find((category) => {
+      const categoryNormalized = normalizeCategoryLookup(`${category.name} ${category.slug}`);
+      if (!categoryNormalized.includes('jardin')) {
+        return false;
+      }
+
+      return (category.subcategories || []).some((subcategory) =>
+        normalizeCategoryLookup(`${subcategory.name} ${subcategory.slug}`).includes('exterior'),
+      );
+    });
+
+    if (bySubcategory) {
+      return `/categoria/${bySubcategory.slug}`;
+    }
+
     const garden = categories.find((category) => {
-      const normalized = `${category.name} ${category.slug}`.toLowerCase();
+      const normalized = normalizeCategoryLookup(`${category.name} ${category.slug}`);
       return normalized.includes('jardin');
     });
 
-    return garden ? `/categoria/${garden.slug}` : '/categoria/jardin';
+    return garden ? `/categoria/${garden.slug}` : '/categoria/jardin-y-exterior';
   }, [categories]);
 
   const getRandomCategoryHref = useCallback(() => {
