@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import {
@@ -26,6 +26,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -52,6 +53,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient();
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       const nextUser = nextSession?.user || null;
+      const nextUserId = nextUser?.id || null;
+      const previousUserId = userIdRef.current;
+      const userChanged = previousUserId !== nextUserId;
+
+      userIdRef.current = nextUserId;
       setSession(nextSession);
       setUser(nextUser);
 
@@ -62,10 +68,21 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       void (async () => {
-        setLoading(true);
-        const admin = await isUserAdmin(nextUser);
-        setIsAdmin(admin);
-        setLoading(false);
+        try {
+          // Keep current screen mounted on token refresh/tab focus changes for the same user.
+          if (userChanged) {
+            setLoading(true);
+          }
+
+          const admin = await isUserAdmin(nextUser);
+          setIsAdmin(admin);
+        } catch {
+          setIsAdmin(false);
+        } finally {
+          if (userChanged) {
+            setLoading(false);
+          }
+        }
       })();
     });
 

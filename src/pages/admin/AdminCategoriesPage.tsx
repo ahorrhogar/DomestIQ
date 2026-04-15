@@ -77,8 +77,17 @@ export default function AdminCategoriesPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminCategoryRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const isDialogDirty = useMemo(() => {
+    if (!dialogOpen) {
+      return false;
+    }
+
+    return JSON.stringify(form) !== dialogInitialForm;
+  }, [dialogOpen, form, dialogInitialForm]);
 
   const categoriesQuery = useQuery({
     queryKey: ["admin-categories"],
@@ -129,11 +138,12 @@ export default function AdminCategoriesPage() {
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
+    setDialogInitialForm(JSON.stringify(INITIAL_FORM));
     setDialogOpen(true);
   };
 
   const openEdit = (category: AdminCategoryRecord) => {
-    setForm({
+    const nextForm: FormState = {
       id: category.id,
       name: category.name,
       slug: category.slug || "",
@@ -142,8 +152,31 @@ export default function AdminCategoriesPage() {
       imageUrl: category.imageUrl || "",
       sortOrder: category.sortOrder,
       isActive: category.isActive,
-    });
+    };
+    setForm(nextForm);
+    setDialogInitialForm(JSON.stringify(nextForm));
     setDialogOpen(true);
+  };
+
+  const requestCloseDialog = () => {
+    if (!isDialogDirty) {
+      setDialogOpen(false);
+      return;
+    }
+
+    const shouldClose = window.confirm("Hay cambios sin guardar. ¿Seguro que quieres salir?");
+    if (shouldClose) {
+      setDialogOpen(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setDialogOpen(true);
+      return;
+    }
+
+    requestCloseDialog();
   };
 
   const parentOptions = useMemo(() => {
@@ -327,7 +360,7 @@ export default function AdminCategoriesPage() {
         </Table>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar categoria" : "Nueva categoria"}</DialogTitle>
@@ -420,7 +453,7 @@ export default function AdminCategoriesPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={requestCloseDialog}>
               Cancelar
             </Button>
             <Button onClick={onSave} disabled={saveMutation.isPending}>

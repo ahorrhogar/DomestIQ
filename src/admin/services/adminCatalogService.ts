@@ -318,19 +318,98 @@ function parseTags(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function parseTechnicalSpecs(specs: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const attributes = specs.attributes;
+const TECHNICAL_SPEC_META_KEYS = new Set([
+  "slug",
+  "longdescription",
+  "rating",
+  "reviewcount",
+  "tags",
+  "material",
+  "color",
+  "style",
+  "dimensions",
+  "weight",
+  "featured",
+  "teamrecommended",
+  "editorialpriority",
+  "bestseller",
+  "isnew",
+  "sku",
+  "ean",
+  "isactive",
+  "attributes",
+]);
 
-  if (!attributes || typeof attributes !== "object" || Array.isArray(attributes)) {
+function parseTechnicalSpecsFromValue(value: unknown, filterMetaKeys = false): Array<{ label: string; value: string }> {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+
+        const record = entry as Record<string, unknown>;
+        const label = sanitizeText(typeof record.label === "string" ? record.label : "", 60);
+        const specValue = sanitizeText(typeof record.value === "string" ? record.value : "", 200);
+
+        if (!label || !specValue) {
+          return null;
+        }
+
+        return {
+          label,
+          value: specValue,
+        };
+      })
+      .filter((entry): entry is { label: string; value: string } => Boolean(entry));
+  }
+
+  if (!value || typeof value !== "object") {
     return [];
   }
 
-  return Object.entries(attributes)
-    .map(([label, value]) => ({
-      label: sanitizeText(label, 60),
-      value: sanitizeText(String(value ?? ""), 200),
-    }))
-    .filter((entry) => entry.label && entry.value);
+  return Object.entries(value as Record<string, unknown>)
+    .map(([label, rawValue]) => {
+      const normalizedLabel = sanitizeText(label, 60);
+      const normalizedLabelKey = normalizedLabel.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      if (!normalizedLabel || (filterMetaKeys && TECHNICAL_SPEC_META_KEYS.has(normalizedLabelKey))) {
+        return null;
+      }
+
+      if (rawValue === null || rawValue === undefined) {
+        return null;
+      }
+
+      if (!["string", "number", "boolean"].includes(typeof rawValue)) {
+        return null;
+      }
+
+      const normalizedValue = sanitizeText(String(rawValue), 200);
+      if (!normalizedValue) {
+        return null;
+      }
+
+      return {
+        label: normalizedLabel,
+        value: normalizedValue,
+      };
+    })
+    .filter((entry): entry is { label: string; value: string } => Boolean(entry));
+}
+
+function parseTechnicalSpecs(specs: Record<string, unknown>, attributes?: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const fromSpecsAttributes = parseTechnicalSpecsFromValue(specs.attributes);
+  if (fromSpecsAttributes.length > 0) {
+    return fromSpecsAttributes;
+  }
+
+  const fromSpecsRecord = parseTechnicalSpecsFromValue(specs, true);
+  if (fromSpecsRecord.length > 0) {
+    return fromSpecsRecord;
+  }
+
+  return parseTechnicalSpecsFromValue(attributes, true);
 }
 
 function toTechnicalSpecObject(rows: Array<{ label: string; value: string }> = []) {
@@ -617,7 +696,7 @@ function mapProductRow(
     subcategoryName: categoryData?.parentName ? categoryData.name : undefined,
     shortDescription: String(row.short_description || row.description || ""),
     longDescription: String(row.long_description || specs.longDescription || ""),
-    technicalSpecs: parseTechnicalSpecs(specs),
+    technicalSpecs: parseTechnicalSpecs(specs, attributes),
     tags,
     attributes,
     isActive: Boolean(row.is_active),

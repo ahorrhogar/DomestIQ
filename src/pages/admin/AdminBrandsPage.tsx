@@ -60,8 +60,17 @@ export default function AdminBrandsPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminBrandRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const isDialogDirty = useMemo(() => {
+    if (!dialogOpen) {
+      return false;
+    }
+
+    return JSON.stringify(form) !== dialogInitialForm;
+  }, [dialogOpen, form, dialogInitialForm]);
 
   const brandsQuery = useQuery({
     queryKey: ["admin-brands"],
@@ -106,17 +115,41 @@ export default function AdminBrandsPage() {
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
+    setDialogInitialForm(JSON.stringify(INITIAL_FORM));
     setDialogOpen(true);
   };
 
   const openEdit = (brand: AdminBrandRecord) => {
-    setForm({
+    const nextForm: FormState = {
       id: brand.id,
       name: brand.name,
       logoUrl: brand.logoUrl || "",
       isActive: brand.isActive,
-    });
+    };
+    setForm(nextForm);
+    setDialogInitialForm(JSON.stringify(nextForm));
     setDialogOpen(true);
+  };
+
+  const requestCloseDialog = () => {
+    if (!isDialogDirty) {
+      setDialogOpen(false);
+      return;
+    }
+
+    const shouldClose = window.confirm("Hay cambios sin guardar. ¿Seguro que quieres salir?");
+    if (shouldClose) {
+      setDialogOpen(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setDialogOpen(true);
+      return;
+    }
+
+    requestCloseDialog();
   };
 
   const onSave = async () => {
@@ -285,7 +318,7 @@ export default function AdminBrandsPage() {
         </Table>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar marca" : "Nueva marca"}</DialogTitle>
@@ -325,7 +358,7 @@ export default function AdminBrandsPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={requestCloseDialog}>
               Cancelar
             </Button>
             <Button onClick={onSave} disabled={saveMutation.isPending}>

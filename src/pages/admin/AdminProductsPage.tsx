@@ -131,6 +131,33 @@ function parseSpecsText(value: string): Array<{ label: string; value: string }> 
     .filter((item) => item.label && item.value);
 }
 
+function shortenSegment(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const headLength = Math.max(6, Math.floor((maxLength - 3) / 2));
+  const tailLength = Math.max(4, maxLength - 3 - headLength);
+  return `${value.slice(0, headLength)}...${value.slice(-tailLength)}`;
+}
+
+function formatCompactImageUrl(rawUrl: string): string {
+  const normalized = rawUrl.trim();
+  if (!normalized) {
+    return "URL de imagen";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const host = shortenSegment(parsed.hostname.replace(/^www\./, ""), 22);
+    const pathSegments = parsed.pathname.split("/").filter(Boolean);
+    const fileName = pathSegments.length > 0 ? shortenSegment(pathSegments[pathSegments.length - 1], 24) : "imagen";
+    return `${host}/.../${fileName}`;
+  } catch {
+    return shortenSegment(normalized, 34);
+  }
+}
+
 export default function AdminProductsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -142,10 +169,20 @@ export default function AdminProductsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminProductRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isPreparingProductForImages, setIsPreparingProductForImages] = useState(false);
+
+  const isDialogDirty = useMemo(() => {
+    if (!dialogOpen) {
+      return false;
+    }
+
+    return JSON.stringify(form) !== dialogInitialForm || Boolean(newImageUrl.trim()) || uploadFile !== null;
+  }, [dialogOpen, form, dialogInitialForm, newImageUrl, uploadFile]);
 
   const brandsQuery = useQuery({ queryKey: ["admin-brands"], queryFn: listBrands });
   const categoriesQuery = useQuery({ queryKey: ["admin-categories"], queryFn: listCategories });
@@ -279,11 +316,14 @@ export default function AdminProductsPage() {
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
+    setDialogInitialForm(JSON.stringify(INITIAL_FORM));
+    setNewImageUrl("");
+    setUploadFile(null);
     setDialogOpen(true);
   };
 
   const openEdit = (product: AdminProductRecord) => {
-    setForm({
+    const nextForm: FormState = {
       id: product.id,
       name: product.name,
       slug: product.slug,
@@ -299,8 +339,96 @@ export default function AdminProductsPage() {
       featured: product.featured,
       teamRecommended: product.teamRecommended,
       editorialPriority: product.editorialPriority,
-    });
+    };
+    setForm(nextForm);
+    setDialogInitialForm(JSON.stringify(nextForm));
+    setNewImageUrl("");
+    setUploadFile(null);
     setDialogOpen(true);
+  };
+
+  const requestCloseDialog = () => {
+    if (!isDialogDirty) {
+      setDialogOpen(false);
+      return;
+    }
+
+    const shouldClose = window.confirm("Hay cambios sin guardar. ¿Seguro que quieres salir?");
+    if (shouldClose) {
+      setDialogOpen(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setDialogOpen(true);
+      return;
+    }
+
+    requestCloseDialog();
+  };
+
+  const ensureProductForImages = async (): Promise<string | null> => {
+    if (form.id) {
+      return form.id;
+    }
+
+    const parsed = schema.safeParse(form);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message || "Completa el formulario antes de agregar imagenes");
+      return null;
+    }
+
+    setIsPreparingProductForImages(true);
+    try {
+      const created = await upsertProduct({
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        brandId: parsed.data.brandId,
+        categoryId: parsed.data.categoryId,
+        shortDescription: parsed.data.shortDescription,
+        longDescription: parsed.data.longDescription,
+        tags: (parsed.data.tags || "")
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        technicalSpecs: parseSpecsText(parsed.data.technicalSpecsText || ""),
+        isActive: parsed.data.isActive,
+        featured: parsed.data.featured,
+        teamRecommended: parsed.data.teamRecommended,
+        editorialPriority: parsed.data.editorialPriority,
+        sku: parsed.data.sku || undefined,
+        ean: parsed.data.ean || undefined,
+      });
+
+      setForm((prev) => ({
+        ...prev,
+        id: created.id,
+        slug: created.slug,
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      toast.success("Producto creado. Ahora puedes agregar imagenes.");
+      return created.id;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo crear el producto antes de agregar imagenes");
+      return null;
+    } finally {
+      setIsPreparingProductForImages(false);
+    }
+  };
+
+  const handleAddImageUrl = async () => {
+    if (!newImageUrl.trim()) {
+      toast.error("Ingresa una URL valida");
+      return;
+    }
+
+    const productId = await ensureProductForImages();
+    if (!productId) {
+      return;
+    }
+
+    addImageUrlMutation.mutate({ productId, url: newImageUrl.trim() });
   };
 
   const onSave = async () => {
@@ -555,14 +683,14 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-4xl">
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-x-hidden overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar producto" : "Nuevo producto"}</DialogTitle>
             <DialogDescription>Completa informacion base, SEO y catalogo.</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[70vh] space-y-6 overflow-auto pr-2">
+          <div className="space-y-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="product-name">Nombre</Label>
@@ -730,8 +858,7 @@ export default function AdminProductsPage() {
               </div>
             </div>
 
-            {form.id ? (
-              <div className="space-y-3 rounded-lg border border-border p-4">
+            <div className="space-y-3 overflow-hidden rounded-lg border border-border p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">Imagenes del producto</h3>
                   <p className="text-xs text-muted-foreground">
@@ -739,41 +866,61 @@ export default function AdminProductsPage() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
+                {!form.id ? (
+                  <p className="text-xs text-muted-foreground">
+                    Al agregar una URL o subir un archivo se creara primero el producto automaticamente.
+                  </p>
+                ) : null}
+
+                <div className="flex flex-col gap-2 md:flex-row">
                   <Input
+                    className="min-w-0 flex-1"
                     value={newImageUrl}
                     onChange={(event) => setNewImageUrl(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      void handleAddImageUrl();
+                    }}
                     placeholder="https://..."
                   />
                   <Button
                     variant="outline"
                     onClick={() => {
-                      if (!form.id || !newImageUrl.trim()) {
-                        toast.error("Ingresa una URL valida");
-                        return;
-                      }
-                      addImageUrlMutation.mutate({ productId: form.id, url: newImageUrl.trim() });
+                      void handleAddImageUrl();
                     }}
-                    disabled={addImageUrlMutation.isPending}
+                    className="md:shrink-0"
+                    disabled={addImageUrlMutation.isPending || isPreparingProductForImages}
                   >
                     Agregar URL
                   </Button>
                 </div>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-col gap-2 md:flex-row">
                   <Input
+                    className="min-w-0 flex-1"
                     type="file"
                     accept="image/*"
                     onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
                   />
                   <Button
                     variant="outline"
-                    disabled={!uploadFile || uploadImageMutation.isPending}
-                    onClick={() => {
-                      if (!form.id || !uploadFile) {
+                    className="md:shrink-0"
+                    disabled={!uploadFile || uploadImageMutation.isPending || isPreparingProductForImages}
+                    onClick={async () => {
+                      if (!uploadFile) {
                         return;
                       }
-                      uploadImageMutation.mutate({ productId: form.id, file: uploadFile });
+
+                      const productId = await ensureProductForImages();
+                      if (!productId) {
+                        return;
+                      }
+
+                      uploadImageMutation.mutate({ productId, file: uploadFile });
                     }}
                   >
                     <Upload className="mr-2 h-4 w-4" />
@@ -783,13 +930,15 @@ export default function AdminProductsPage() {
 
                 <div className="space-y-2">
                   {(productImagesQuery.data || []).map((image) => (
-                    <div key={image.id} className="flex flex-col gap-2 rounded-md border border-border p-2 sm:flex-row sm:items-center">
+                    <div key={image.id} className="flex w-full flex-col gap-2 overflow-hidden rounded-md border border-border p-2 md:flex-row md:items-center">
                       <img src={image.url} alt="Producto" className="h-16 w-16 rounded object-cover" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs text-muted-foreground">{image.url}</p>
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <p className="max-w-full truncate text-xs text-muted-foreground" title={image.url}>
+                          {formatCompactImageUrl(image.url)}
+                        </p>
                         {image.isPrimary ? <Badge className="mt-1">Principal</Badge> : null}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2 md:shrink-0 md:justify-end">
                         <Button
                           variant="outline"
                           size="sm"
@@ -808,16 +957,18 @@ export default function AdminProductsPage() {
                   ))}
 
                   {productImagesQuery.isLoading ? <p className="text-xs text-muted-foreground">Cargando imagenes...</p> : null}
-                  {!productImagesQuery.isLoading && !(productImagesQuery.data || []).length ? (
+                  {!form.id ? (
+                    <p className="text-xs text-muted-foreground">Guarda o agrega una imagen para habilitar la galeria del producto.</p>
+                  ) : null}
+                  {form.id && !productImagesQuery.isLoading && !(productImagesQuery.data || []).length ? (
                     <p className="text-xs text-muted-foreground">No hay imagenes cargadas.</p>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
+            </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={requestCloseDialog}>
               Cancelar
             </Button>
             <Button onClick={onSave} disabled={saveMutation.isPending}>

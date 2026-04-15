@@ -154,13 +154,31 @@ export default function AdminOffersPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [dialogInitialForm, setDialogInitialForm] = useState(() => JSON.stringify(INITIAL_FORM));
   const [deleteTarget, setDeleteTarget] = useState<AdminOfferRecord | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [priceDraft, setPriceDraft] = useState<{ offerId: string; price: number; oldPrice: number; stock: boolean } | null>(null);
+  const [priceDraftInitial, setPriceDraftInitial] = useState<string | null>(null);
   const [historyOffer, setHistoryOffer] = useState<AdminOfferRecord | null>(null);
   const debouncedProductFilterSearch = useDebouncedValue(productFilterSearch, 300);
   const debouncedProductFormSearch = useDebouncedValue(productFormSearch, 300);
+
+  const isDialogDirty = useMemo(() => {
+    if (!dialogOpen) {
+      return false;
+    }
+
+    return JSON.stringify(form) !== dialogInitialForm;
+  }, [dialogOpen, form, dialogInitialForm]);
+
+  const isQuickPriceDirty = useMemo(() => {
+    if (!priceDialogOpen || !priceDraft || !priceDraftInitial) {
+      return false;
+    }
+
+    return JSON.stringify(priceDraft) !== priceDraftInitial;
+  }, [priceDialogOpen, priceDraft, priceDraftInitial]);
 
   const offersQuery = useQuery({
     queryKey: [
@@ -270,6 +288,7 @@ export default function AdminOffersPage() {
       toast.success("Cambio de precio guardado");
       setPriceDialogOpen(false);
       setPriceDraft(null);
+      setPriceDraftInitial(null);
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar el cambio de precio");
@@ -349,12 +368,13 @@ export default function AdminOffersPage() {
 
   const openCreate = () => {
     setForm(INITIAL_FORM);
+    setDialogInitialForm(JSON.stringify(INITIAL_FORM));
     setProductFormSearch("");
     setDialogOpen(true);
   };
 
   const openEdit = (offer: AdminOfferRecord) => {
-    setForm({
+    const nextForm: FormState = {
       id: offer.id,
       productId: offer.productId,
       merchantId: offer.merchantId,
@@ -366,19 +386,60 @@ export default function AdminOffersPage() {
       isFeatured: offer.isFeatured,
       sourceType: offer.sourceType,
       updateMode: offer.updateMode,
-    });
+    };
+    setForm(nextForm);
+    setDialogInitialForm(JSON.stringify(nextForm));
     setProductFormSearch("");
     setDialogOpen(true);
   };
 
+  const requestCloseDialog = () => {
+    if (!isDialogDirty) {
+      setDialogOpen(false);
+      return;
+    }
+
+    const shouldClose = window.confirm("Hay cambios sin guardar. ¿Seguro que quieres salir?");
+    if (shouldClose) {
+      setDialogOpen(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setDialogOpen(true);
+      return;
+    }
+
+    requestCloseDialog();
+  };
+
   const openPriceDialog = (offer: AdminOfferRecord) => {
-    setPriceDraft({
+    const nextDraft = {
       offerId: offer.id,
       price: offer.currentPrice,
       oldPrice: offer.oldPrice || offer.currentPrice,
       stock: offer.stock,
-    });
+    };
+    setPriceDraft(nextDraft);
+    setPriceDraftInitial(JSON.stringify(nextDraft));
     setPriceDialogOpen(true);
+  };
+
+  const requestClosePriceDialog = () => {
+    if (!isQuickPriceDirty) {
+      setPriceDialogOpen(false);
+      setPriceDraft(null);
+      setPriceDraftInitial(null);
+      return;
+    }
+
+    const shouldClose = window.confirm("Hay cambios sin guardar. ¿Seguro que quieres salir?");
+    if (shouldClose) {
+      setPriceDialogOpen(false);
+      setPriceDraft(null);
+      setPriceDraftInitial(null);
+    }
   };
 
   const openHistoryDialog = (offer: AdminOfferRecord) => {
@@ -761,7 +822,7 @@ export default function AdminOffersPage() {
         </div>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{form.id ? "Editar oferta" : "Nueva oferta"}</DialogTitle>
@@ -900,7 +961,7 @@ export default function AdminOffersPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={requestCloseDialog}>
               Cancelar
             </Button>
             <Button onClick={onSave} disabled={saveMutation.isPending}>
@@ -913,10 +974,12 @@ export default function AdminOffersPage() {
       <Dialog
         open={priceDialogOpen}
         onOpenChange={(open) => {
-          setPriceDialogOpen(open);
-          if (!open) {
-            setPriceDraft(null);
+          if (open) {
+            setPriceDialogOpen(true);
+            return;
           }
+
+          requestClosePriceDialog();
         }}
       >
         <DialogContent className="sm:max-w-lg">
@@ -985,7 +1048,7 @@ export default function AdminOffersPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPriceDialogOpen(false)}>
+            <Button variant="outline" onClick={requestClosePriceDialog}>
               Cancelar
             </Button>
             <Button onClick={onQuickPriceSave} disabled={quickPriceMutation.isPending}>

@@ -31,6 +31,7 @@ interface ProductRow {
   category_id: string;
   description: string;
   specs: unknown;
+  attributes?: unknown;
   is_active?: boolean | null;
   created_at: string;
 }
@@ -117,6 +118,28 @@ const emptyRankingSignals: CatalogRankingSignals = {
 
 const SNAPSHOT_TTL_MS = 180000;
 const RANKING_SIGNALS_TTL_MS = 120000;
+
+const SPEC_META_KEYS = new Set([
+  "slug",
+  "longdescription",
+  "rating",
+  "reviewcount",
+  "tags",
+  "material",
+  "color",
+  "style",
+  "dimensions",
+  "weight",
+  "featured",
+  "teamrecommended",
+  "editorialpriority",
+  "bestseller",
+  "isnew",
+  "sku",
+  "ean",
+  "isactive",
+  "attributes",
+]);
 
 const emptySnapshot: CatalogSnapshot = {
   products: [],
@@ -530,28 +553,60 @@ function toStringArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function toSpecArray(value: unknown): ProductSpec[] {
-  if (!Array.isArray(value)) {
+function toSpecArray(value: unknown, filterMetaKeys = false): ProductSpec[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+
+        const record = entry as Record<string, unknown>;
+        const label = typeof record.label === "string" ? record.label : "";
+        const specValue = typeof record.value === "string" ? record.value : "";
+
+        if (!label || !specValue) {
+          return null;
+        }
+
+        return {
+          label,
+          value: specValue,
+        };
+      })
+      .filter((entry): entry is ProductSpec => Boolean(entry));
+  }
+
+  if (!value || typeof value !== "object") {
     return [];
   }
 
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
+  return Object.entries(value as Record<string, unknown>)
+    .map(([label, specValue]) => {
+      const normalizedLabel = label.trim();
+      const normalizedLabelKey = normalizedLabel.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      if (!normalizedLabel || (filterMetaKeys && SPEC_META_KEYS.has(normalizedLabelKey))) {
         return null;
       }
 
-      const record = entry as Record<string, unknown>;
-      const label = typeof record.label === "string" ? record.label : "";
-      const specValue = typeof record.value === "string" ? record.value : "";
+      if (specValue === null || specValue === undefined) {
+        return null;
+      }
 
-      if (!label || !specValue) {
+      if (!["string", "number", "boolean"].includes(typeof specValue)) {
+        return null;
+      }
+
+      const normalizedValue = String(specValue).trim();
+
+      if (!normalizedLabel || !normalizedValue) {
         return null;
       }
 
       return {
-        label,
-        value: specValue,
+        label: normalizedLabel,
+        value: normalizedValue,
       };
     })
     .filter((entry): entry is ProductSpec => Boolean(entry));
@@ -686,11 +741,20 @@ function buildProducts(
       const originalPrice = originalPriceCandidate > minPrice ? originalPriceCandidate : undefined;
 
       const specsRecord = parseSpecs(row.specs);
-      const productSpecs = toSpecArray(specsRecord.attributes);
+      const rowAttributes = parseSpecs(row.attributes);
+      const specsFromAttributes = toSpecArray(specsRecord.attributes);
+      const specsFromRecord = toSpecArray(specsRecord, true);
+      const specsFromColumnAttributes = toSpecArray(rowAttributes, true);
+      const productSpecs = specsFromAttributes.length
+        ? specsFromAttributes
+        : specsFromRecord.length
+          ? specsFromRecord
+          : specsFromColumnAttributes;
       const rawAttributes = parseSpecs(specsRecord.attributes);
+      const effectiveAttributes = Object.keys(rawAttributes).length > 0 ? rawAttributes : rowAttributes;
       const editorialPriorityValue = toNumber(
         (specsRecord.editorialPriority as number | string | null | undefined) ??
-          (rawAttributes.editorialPriority as number | string | null | undefined),
+          (effectiveAttributes.editorialPriority as number | string | null | undefined),
         0,
       );
       const editorialPriority = Math.max(0, Math.min(100, Math.round(editorialPriorityValue)));
@@ -731,8 +795,8 @@ function buildProducts(
         style: typeof specsRecord.style === "string" ? specsRecord.style : undefined,
         dimensions: typeof specsRecord.dimensions === "string" ? specsRecord.dimensions : undefined,
         weight: typeof specsRecord.weight === "string" ? specsRecord.weight : undefined,
-        featured: toBoolean(specsRecord.featured ?? rawAttributes.featured),
-        teamRecommended: toBoolean(specsRecord.teamRecommended ?? rawAttributes.teamRecommended),
+        featured: toBoolean(specsRecord.featured ?? effectiveAttributes.featured),
+        teamRecommended: toBoolean(specsRecord.teamRecommended ?? effectiveAttributes.teamRecommended),
         editorialPriority,
         bestSeller: toBoolean(specsRecord.bestSeller),
         isNew: toBoolean(specsRecord.isNew),
@@ -1107,7 +1171,7 @@ async function buildSnapshot(client: SupabaseClientLike): Promise<CatalogSnapsho
   const [brandRows, categoryRows, productRows, imageRows, merchantRows, offerRows, priceHistoryRows] = await Promise.all([
     queryTable<BrandRow>("brands", "id,name", client),
     queryTable<CategoryRow>("categories", "id,name,parent_id", client),
-    queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,is_active,created_at", client),
+    queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,attributes,is_active,created_at", client),
     queryTable<ProductImageRow>("product_images", "id,product_id,url,is_primary", client),
     queryTable<MerchantRow>("merchants", "id,name,logo_url", client),
     queryTable<OfferRow>("offers", "id,product_id,merchant_id,price,old_price,url,stock,is_active,updated_at", client),

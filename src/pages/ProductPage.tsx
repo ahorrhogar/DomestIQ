@@ -3,8 +3,15 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import Breadcrumb from '@/components/layout/Breadcrumb';
 import { ProductGrid } from '@/components/product/ProductCard';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useMemo, useState, useEffect } from 'react';
-import { Star, Tag, TrendingDown, Bell, ExternalLink, Truck, ShieldCheck, ChevronDown, ChevronUp, TrendingUp, Minus } from 'lucide-react';
+import { Star, Tag, TrendingDown, Bell, ExternalLink, Truck, ShieldCheck, ChevronDown, ChevronUp, TrendingUp, Minus, ChevronLeft, ChevronRight, Share2, Link as LinkIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { analyticsService, categoryService, offerService, productService } from '@/services';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
@@ -37,6 +44,7 @@ const ProductPage = () => {
   const product = slug ? productService.getProductBySlug(slug) : undefined;
   const useRedirectApi = (import.meta.env.VITE_USE_REDIRECT_API || "false") === "true";
   const [showAllSpecs, setShowAllSpecs] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   const offers = useMemo(() => (product ? offerService.getOffersForProduct(product.id) : []), [product]);
   const priceHistory = useMemo(() => (product ? offerService.getPriceHistory(product.id) : []), [product]);
@@ -72,6 +80,10 @@ const ProductPage = () => {
     });
   }, [product]);
 
+  useEffect(() => {
+    setSelectedImageIndex(0);
+  }, [product?.id]);
+
   if (!product) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -91,7 +103,40 @@ const ProductPage = () => {
     { label: product.name },
   ];
 
+  const galleryImages = product.images.filter(Boolean);
+  const hasMultipleImages = galleryImages.length > 1;
+  const clampedImageIndex = Math.min(selectedImageIndex, Math.max(0, galleryImages.length - 1));
+  const selectedImage = galleryImages[clampedImageIndex] || '';
   const visibleSpecs = showAllSpecs ? product.specs : product.specs.slice(0, 4);
+
+  const goToPrevImage = () => {
+    if (!hasMultipleImages) {
+      return;
+    }
+
+    setSelectedImageIndex((current) => (current - 1 + galleryImages.length) % galleryImages.length);
+  };
+
+  const goToNextImage = () => {
+    if (!hasMultipleImages) {
+      return;
+    }
+
+    setSelectedImageIndex((current) => (current + 1) % galleryImages.length);
+  };
+
+  const copyProductLink = async () => {
+    try {
+      if (typeof window === 'undefined' || !window.location?.href) {
+        throw new Error('missing_window_location');
+      }
+
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success('Enlace copiado al portapapeles');
+    } catch {
+      toast.error('No se pudo copiar el enlace');
+    }
+  };
 
   const isOfferDirectUrlSafe = (offerUrl: string, merchantUrl: string): boolean => {
     const merchantDomain = extractDomainFromAffiliateUrl(merchantUrl);
@@ -108,18 +153,87 @@ const ProductPage = () => {
           {/* Product main */}
           <div className="grid lg:grid-cols-2 gap-8 mb-12">
             {/* Gallery */}
-            <div className="bg-secondary/30 rounded-2xl p-8 flex items-center justify-center aspect-square relative overflow-hidden">
-              <img src={product.images[0]} alt={product.name} className="max-w-full max-h-full object-contain rounded-lg" />
-              {realDiscount && realDiscount > 0 && realDiscount <= 60 && (
-                <span className="absolute top-4 left-4 inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-deal text-deal-foreground text-sm font-bold">
-                  <TrendingDown className="w-4 h-4" />-{realDiscount}%
-                </span>
-              )}
-              {!realDiscount && product.originalPrice && (
-                <span className="absolute top-4 left-4 px-3 py-1 rounded-lg bg-deal text-deal-foreground text-sm font-bold">
-                  Oferta
-                </span>
-              )}
+            <div className="space-y-3">
+              <div className="bg-secondary/30 rounded-2xl p-8 flex items-center justify-center aspect-square relative overflow-hidden">
+                {selectedImage ? (
+                  <img src={selectedImage} alt={`${product.name} - imagen ${clampedImageIndex + 1}`} className="max-w-full max-h-full object-contain rounded-lg" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center rounded-lg bg-secondary/60 text-sm text-muted-foreground">
+                    No hay imagen disponible
+                  </div>
+                )}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="absolute right-4 top-4 h-9 w-9 rounded-full bg-background/90"
+                      aria-label="Compartir producto"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => { void copyProductLink(); }}>
+                      <LinkIcon className="mr-2 h-4 w-4" />
+                      Copiar enlace
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {hasMultipleImages ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-background/90"
+                      onClick={goToPrevImage}
+                      aria-label="Imagen anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-background/90"
+                      onClick={goToNextImage}
+                      aria-label="Imagen siguiente"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : null}
+
+                {realDiscount && realDiscount > 0 && realDiscount <= 60 && (
+                  <span className="absolute top-4 left-4 inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-deal text-deal-foreground text-sm font-bold">
+                    <TrendingDown className="w-4 h-4" />-{realDiscount}%
+                  </span>
+                )}
+                {!realDiscount && product.originalPrice && (
+                  <span className="absolute top-4 left-4 px-3 py-1 rounded-lg bg-deal text-deal-foreground text-sm font-bold">
+                    Oferta
+                  </span>
+                )}
+              </div>
+
+              {hasMultipleImages ? (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {galleryImages.map((image, index) => (
+                    <button
+                      key={`${image}-${index}`}
+                      type="button"
+                      onClick={() => setSelectedImageIndex(index)}
+                      className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border-2 transition ${index === clampedImageIndex ? 'border-accent shadow-sm' : 'border-border hover:border-accent/60'}`}
+                      aria-label={`Ver imagen ${index + 1}`}
+                    >
+                      <img src={image} alt={`${product.name} miniatura ${index + 1}`} className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             {/* Info */}
