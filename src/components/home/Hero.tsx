@@ -13,7 +13,7 @@ const Hero = () => (
     </div>
 
     <div className="container mx-auto px-4 py-14 md:py-20 relative z-10">
-      <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,620px)] lg:gap-10">
+      <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(340px,520px)] lg:gap-10">
         <div>
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-foreground/10 text-primary-foreground/90 text-sm mb-5 animate-fade-in">
             <TrendingDown className="w-4 h-4 text-accent" />
@@ -48,13 +48,13 @@ const Hero = () => (
           </div>
         </div>
 
-        <div className="relative mx-auto w-full max-w-[620px] animate-fade-in" style={{ animationDelay: '0.15s' }}>
+        <div className="relative mx-auto w-full max-w-[520px] animate-fade-in" style={{ animationDelay: '0.15s' }}>
           <div className="absolute -left-8 top-1/2 h-24 w-24 -translate-y-1/2 rounded-full border border-primary-foreground/20" />
           <div className="absolute -right-6 top-8 h-36 w-36 rounded-full border border-primary-foreground/15" />
           <img
             src={HERO_MASCOT_IMAGE}
             alt="Mascota de Homara"
-            className="relative z-10 mx-auto w-full max-h-[620px] object-contain drop-shadow-[0_22px_28px_rgba(5,18,49,0.28)]"
+            className="relative z-10 mx-auto w-full max-h-[520px] object-contain drop-shadow-[0_22px_28px_rgba(5,18,49,0.28)] lg:origin-bottom lg:scale-110"
             loading="eager"
             onError={(event) => {
               event.currentTarget.onerror = null;
