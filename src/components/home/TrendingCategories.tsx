@@ -100,6 +100,10 @@ const TrendingCategories = () => {
                 .map(sub => {
                   const subProduct = products.find(p => p.subcategoryId === sub.id);
                   if (!subProduct) return null;
+                  const subPreviewImage =
+                    sub.image ||
+                    subProduct.images.find((image) => Boolean(image)) ||
+                    PRODUCT_IMAGE_FALLBACK;
                   return (
                     <Link
                       key={sub.id}
@@ -109,7 +113,7 @@ const TrendingCategories = () => {
                     >
                       <div className="w-[100px] h-[100px] rounded-full bg-secondary/80 overflow-hidden mb-2.5 group-hover:ring-2 group-hover:ring-accent/50 transition-all duration-300">
                         <img
-                          src={subProduct.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK}
+                          src={subPreviewImage}
                           alt={sub.name}
                           className="w-full h-full object-contain p-2"
                           loading="lazy"

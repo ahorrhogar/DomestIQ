@@ -14,6 +14,7 @@ export interface Subcategory {
   categoryId: string;
   name: string;
   slug: string;
+  image?: string;
   productCount: number;
 }
 

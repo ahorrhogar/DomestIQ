@@ -700,7 +700,8 @@ function buildCategories(
       id: subRow.id,
       categoryId: row.id,
       name: subRow.name,
-      slug: slugify(subRow.name),
+      slug: subRow.slug ? slugify(subRow.slug) : slugify(subRow.name),
+      image: subRow.image_url || undefined,
       productCount: productCountBySubcategoryId.get(subRow.id) || 0,
     }));
 
