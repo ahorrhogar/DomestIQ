@@ -14,6 +14,8 @@ import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
+const LAST_RANDOM_CATEGORY_KEY = 'home:last-random-category-slug';
+
 function normalizeCategoryLookup(value: string): string {
   return String(value || '')
     .toLowerCase()
@@ -114,7 +116,21 @@ const Index = () => {
       return '/categoria/muebles';
     }
 
-    const randomCategory = pool[Math.floor(Math.random() * pool.length)];
+    const lastSlug = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(LAST_RANDOM_CATEGORY_KEY)
+      : null;
+
+    const candidates = pool.length > 1 && lastSlug
+      ? pool.filter((category) => category.slug !== lastSlug)
+      : pool;
+
+    const safeCandidates = candidates.length ? candidates : pool;
+    const randomCategory = safeCandidates[Math.floor(Math.random() * safeCandidates.length)];
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(LAST_RANDOM_CATEGORY_KEY, randomCategory.slug);
+    }
+
     return `/categoria/${randomCategory.slug}`;
   }, [categories]);
 
