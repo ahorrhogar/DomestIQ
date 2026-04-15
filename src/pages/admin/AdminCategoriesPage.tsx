@@ -488,6 +488,20 @@ export default function AdminCategoriesPage() {
               </div>
             </div>
 
+            {form.imageUrl ? (
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Vista previa de imagen</Label>
+                <div className="rounded-md border border-border bg-secondary/30 p-3">
+                  <img
+                    src={form.imageUrl}
+                    alt="Preview categoria"
+                    className="h-24 w-24 rounded-md object-cover"
+                  />
+                  <p className="mt-2 break-all text-xs text-muted-foreground">{form.imageUrl}</p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="sm:col-span-2 flex items-center justify-between rounded-md border border-border px-3 py-2">
               <div>
                 <p className="text-sm font-medium">Categoria activa</p>

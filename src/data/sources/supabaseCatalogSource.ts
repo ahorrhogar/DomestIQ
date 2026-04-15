@@ -21,6 +21,9 @@ interface BrandRow {
 interface CategoryRow {
   id: string;
   name: string;
+  slug?: string | null;
+  icon?: string | null;
+  image_url?: string | null;
   parent_id: string | null;
 }
 
@@ -687,7 +690,7 @@ function buildCategories(
   });
 
   return topCategoryRows.map((row) => {
-    const slug = slugify(row.name);
+    const slug = row.slug ? slugify(row.slug) : slugify(row.name);
     const meta = categoryMetaBySlug[slug] || {
       icon: "Archive",
       description: `Compara precios de ${row.name.toLowerCase()} en tiempo real`,
@@ -708,9 +711,9 @@ function buildCategories(
       id: row.id,
       name: row.name,
       slug,
-      icon: meta.icon,
+      icon: row.icon || meta.icon,
       description: meta.description,
-      image: meta.image,
+      image: row.image_url || meta.image,
       productCount: directCount + nestedCount,
       subcategories,
     };
@@ -1195,7 +1198,7 @@ async function queryTable<T>(
 async function buildSnapshot(client: SupabaseClientLike): Promise<CatalogSnapshot> {
   const [brandRows, categoryRows, productRows, imageRows, merchantRows, offerRows, priceHistoryRows] = await Promise.all([
     queryTable<BrandRow>("brands", "id,name", client),
-    queryTable<CategoryRow>("categories", "id,name,parent_id", client),
+    queryTable<CategoryRow>("categories", "id,name,slug,icon,image_url,parent_id", client),
     queryTable<ProductRow>("products", "id,name,brand_id,category_id,description,specs,attributes,is_active,created_at", client),
     queryTable<ProductImageRow>("product_images", "id,product_id,url,is_primary,sort_order", client),
     queryTable<MerchantRow>("merchants", "id,name,logo_url", client),
@@ -1285,6 +1288,10 @@ function currentRankingSignals(): CatalogRankingSignals {
 
 export async function initializeCatalogSource(): Promise<void> {
   await ensureInitialized();
+}
+
+export function invalidateCatalogSnapshotCache(): void {
+  snapshotFetchedAt = 0;
 }
 
 export async function trackClick(

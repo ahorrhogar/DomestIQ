@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { sanitizeNumber, sanitizeText } from "@/infrastructure/security/sanitize";
+import { invalidateCatalogSnapshotCache } from "@/data/sources/supabaseCatalogSource";
 import {
   extractDomainFromAffiliateUrl,
   isAffiliateUrlAllowed,
@@ -1244,6 +1245,8 @@ export async function upsertCategory(input: CategoryMutationInput): Promise<Admi
         isActive: result.isActive,
       },
     });
+
+    invalidateCatalogSnapshotCache();
 
     return result;
   } catch (error) {

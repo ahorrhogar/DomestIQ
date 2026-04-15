@@ -65,33 +65,34 @@ const TrendingCategories = () => {
             onScroll={checkScroll}
             className="flex gap-6 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1"
           >
-            {trending.map(({ category, topProduct }) => (
-              <Link
-                key={category.id}
-                to={`/categoria/${category.slug}`}
-                className="flex-shrink-0 flex flex-col items-center group"
-                style={{ width: '120px' }}
-              >
-                <div className="w-[100px] h-[100px] rounded-full bg-secondary/80 overflow-hidden mb-2.5 group-hover:ring-2 group-hover:ring-accent/50 transition-all duration-300">
-                  {topProduct ? (
+            {trending.map(({ category, topProduct }) => {
+              const categoryPreviewImage =
+                category.image ||
+                topProduct?.images.find((image) => Boolean(image)) ||
+                PRODUCT_IMAGE_FALLBACK;
+
+              return (
+                <Link
+                  key={category.id}
+                  to={`/categoria/${category.slug}`}
+                  className="flex-shrink-0 flex flex-col items-center group"
+                  style={{ width: '120px' }}
+                >
+                  <div className="w-[100px] h-[100px] rounded-full bg-secondary/80 overflow-hidden mb-2.5 group-hover:ring-2 group-hover:ring-accent/50 transition-all duration-300">
                     <img
-                      src={topProduct.images.find((image) => Boolean(image)) || PRODUCT_IMAGE_FALLBACK}
+                      src={categoryPreviewImage}
                       alt={category.name}
                       className="w-full h-full object-contain p-2"
                       loading="lazy"
                       onError={(event) => applyProductImageFallback(event.currentTarget)}
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-2xl">
-                      {category.name.charAt(0)}
-                    </div>
-                  )}
-                </div>
-                <span className="text-xs font-medium text-foreground text-center leading-tight group-hover:text-accent transition-colors">
-                  {category.name}
-                </span>
-              </Link>
-            ))}
+                  </div>
+                  <span className="text-xs font-medium text-foreground text-center leading-tight group-hover:text-accent transition-colors">
+                    {category.name}
+                  </span>
+                </Link>
+              );
+            })}
             {/* Also show popular subcategories */}
             {categories.flatMap(cat =>
               (cat.subcategories || [])
