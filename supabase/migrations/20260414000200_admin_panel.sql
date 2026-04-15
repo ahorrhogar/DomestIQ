@@ -177,7 +177,6 @@ set search_path = public
 as $$
   select coalesce(
     (auth.jwt() ->> 'role') = 'service_role'
-    or (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
     or exists (
       select 1
       from public.admin_users au

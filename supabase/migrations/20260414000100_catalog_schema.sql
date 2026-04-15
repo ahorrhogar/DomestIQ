@@ -79,8 +79,7 @@ language sql
 stable
 as $$
   select coalesce(
-    (auth.jwt() ->> 'role') = 'service_role'
-    or (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin',
+    (auth.jwt() ->> 'role') = 'service_role',
     false
   );
 $$;

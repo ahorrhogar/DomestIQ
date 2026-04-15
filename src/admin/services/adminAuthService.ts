@@ -1,13 +1,19 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/integrations/supabase/client";
+import { logger } from "@/infrastructure/logging/logger";
 
-async function safeAuditAuthAction(action: "auth.login" | "auth.logout"): Promise<void> {
+type AdminAuthAuditAction = "auth.login" | "auth.logout" | "auth.login_failed";
+
+async function safeAuditAuthAction(action: AdminAuthAuditAction, payload?: Record<string, unknown>): Promise<void> {
   try {
     const supabase = getSupabaseClient();
     await supabase.from("admin_actions").insert({
       action,
       entity_type: "auth",
-      payload: { source: "adminAuthService" },
+      payload: {
+        source: "adminAuthService",
+        ...(payload || {}),
+      },
     });
   } catch {
     // Do not fail login/logout when audit logging fails.
@@ -25,6 +31,18 @@ export async function signInAdmin(email: string, password: string): Promise<void
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    await safeAuditAuthAction("auth.login_failed", {
+      reason: error.message,
+    });
+    logger.log({
+      level: "warn",
+      message: "Admin sign-in failed",
+      timestamp: new Date().toISOString(),
+      context: {
+        email,
+        reason: error.message,
+      },
+    });
     throw error;
   }
 
@@ -57,12 +75,8 @@ export async function isUserAdmin(user: User | null | undefined): Promise<boolea
     return false;
   }
 
-  if (user.app_metadata?.role === "admin") {
-    return true;
-  }
-
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase.rpc("is_admin");
+  const { data, error } = await supabase.rpc("is_admin", { user_id: user.id });
 
   if (error) {
     return false;
