@@ -1,5 +1,6 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import type { MouseEvent } from 'react';
 
 interface PromoBannerProps {
   title: string;
@@ -7,16 +8,29 @@ interface PromoBannerProps {
   cta: string;
   href: string;
   image: string;
+  getHref?: () => string;
   /** 'left' = text left image right, 'right' = opposite, 'full' = full-width image bg */
   layout?: 'left' | 'right' | 'full';
   className?: string;
 }
 
-const PromoBanner = ({ title, subtitle, cta, href, image, layout = 'left', className = '' }: PromoBannerProps) => {
+const PromoBanner = ({ title, subtitle, cta, href, image, getHref, layout = 'left', className = '' }: PromoBannerProps) => {
+  const navigate = useNavigate();
+
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!getHref) {
+      return;
+    }
+
+    event.preventDefault();
+    navigate(getHref());
+  };
+
   if (layout === 'full') {
     return (
       <Link
         to={href}
+        onClick={handleClick}
         className={`group block relative rounded-2xl overflow-hidden h-[200px] md:h-[240px] ${className}`}
       >
         <img src={image} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" loading="lazy" />
@@ -37,6 +51,7 @@ const PromoBanner = ({ title, subtitle, cta, href, image, layout = 'left', class
   return (
     <Link
       to={href}
+      onClick={handleClick}
       className={`group block rounded-2xl overflow-hidden border border-border bg-card hover:shadow-card-hover transition-all duration-300 ${className}`}
     >
       <div className={`flex flex-col ${isRight ? 'md:flex-row-reverse' : 'md:flex-row'} h-full`}>

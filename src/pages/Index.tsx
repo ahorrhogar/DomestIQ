@@ -7,14 +7,61 @@ import { ProductGrid } from '@/components/product/ProductCard';
 import ProductDestinationLink from '@/components/product/ProductDestinationLink';
 import TrustBlock from '@/components/home/TrustBlock';
 import SEOContent from '@/components/home/SEOContent';
-import { analyticsService, productService } from '@/services';
+import { analyticsService, categoryService, productService } from '@/services';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
+function normalizeCategoryValue(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 const Index = () => {
+  const categories = categoryService.getAllCategories();
+
+  const categoryRoutes = useMemo(
+    () => categories.map((category) => ({
+      path: `/categoria/${category.slug}`,
+      normalized: `${normalizeCategoryValue(category.name)} ${normalizeCategoryValue(category.slug)}`,
+    })),
+    [categories],
+  );
+
+  const cocinaElectroHref = useMemo(
+    () =>
+      categoryRoutes.find((entry) => entry.normalized.includes('electrodomest') && entry.normalized.includes('cocina'))?.path ||
+      categoryRoutes.find((entry) => entry.normalized.includes('cocina'))?.path ||
+      '/categoria/muebles',
+    [categoryRoutes],
+  );
+
+  const jardinExteriorHref = useMemo(
+    () =>
+      categoryRoutes.find((entry) => entry.normalized.includes('jardin') && entry.normalized.includes('exterior'))?.path ||
+      categoryRoutes.find((entry) => entry.normalized.includes('jardin'))?.path ||
+      '/categoria/muebles',
+    [categoryRoutes],
+  );
+
+  const randomCategoryRoutes = useMemo(
+    () => categoryRoutes.map((entry) => entry.path),
+    [categoryRoutes],
+  );
+
+  const getRandomCategoryHref = useCallback(() => {
+    if (!randomCategoryRoutes.length) {
+      return '/categoria/muebles';
+    }
+
+    const randomIndex = Math.floor(Math.random() * randomCategoryRoutes.length);
+    return randomCategoryRoutes[randomIndex];
+  }, [randomCategoryRoutes]);
+
   const [homeCollections, setHomeCollections] = useState(() => ({
     topProducts: productService.getTopProducts(6),
     deals: productService.getDealProducts(4),
@@ -131,6 +178,7 @@ const Index = () => {
                 subtitle="Muebles, decoración, electrodomésticos y mucho más con los mayores descuentos."
                 cta="¡Que no se te escapen!"
                 href="/categoria/muebles"
+                getHref={getRandomCategoryHref}
                 image="https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?w=600&h=400&fit=crop"
                 layout="full"
               />
@@ -138,7 +186,7 @@ const Index = () => {
                 title="Renueva tu cocina"
                 subtitle="Encuentra los mejores precios en electrodomésticos y utensilios de cocina."
                 cta="Explorar cocina"
-                href="/categoria/cocina"
+                href={cocinaElectroHref}
                 image="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600&h=400&fit=crop"
                 layout="full"
               />
@@ -148,7 +196,7 @@ const Index = () => {
 
         {/* Supergangas - biggest discounts */}
         {deals.length > 0 && (
-          <ProductGrid products={deals} title="🔥 Supergangas" subtitle="Los mayores descuentos del momento" showAll="/categoria/muebles" />
+          <ProductGrid sectionId="supergangas" products={deals} title="🔥 Supergangas" subtitle="Los mayores descuentos del momento" showAll="/categoria/muebles" />
         )}
 
         <TrustBlock />
@@ -170,7 +218,7 @@ const Index = () => {
               title="Tu jardín, tu refugio"
               subtitle="Barbacoas, muebles de exterior y todo lo que necesitas para disfrutar al aire libre."
               cta="Explorar jardín"
-              href="/categoria/jardin"
+              href={jardinExteriorHref}
               image="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&h=400&fit=crop"
               layout="full"
             />

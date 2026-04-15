@@ -43,7 +43,7 @@ const Hero = () => (
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-            <Link to="/categoria/muebles" className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold text-base hover:opacity-90 transition-all shadow-glow">
+            <Link to="/#supergangas" className="inline-flex items-center justify-center gap-2 px-5 py-3 md:px-6 md:py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold text-base hover:opacity-90 transition-all shadow-glow">
               Empezar a comparar
               <ArrowRight className="w-4 h-4" />
             </Link>
