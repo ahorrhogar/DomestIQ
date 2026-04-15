@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { sanitizeNumber, sanitizeText } from "@/infrastructure/security/sanitize";
-import { invalidateCatalogSnapshotCache } from "@/data/sources/supabaseCatalogSource";
+import { invalidateCatalogSnapshotCache, refreshCatalogSnapshotNow } from "@/data/sources/supabaseCatalogSource";
 import {
   extractDomainFromAffiliateUrl,
   isAffiliateUrlAllowed,
@@ -1139,7 +1139,7 @@ export async function listCategories(): Promise<AdminCategoryRecord[]> {
 export async function upsertCategory(input: CategoryMutationInput): Promise<AdminCategoryRecord> {
   const supabase = getSupabaseClient();
   const name = sanitizeText(input.name, 120);
-  const safeImageUrl = input.imageUrl ? sanitizeHttpUrl(input.imageUrl, 300) : "";
+  const safeImageUrl = input.imageUrl ? sanitizeHttpUrl(input.imageUrl, 2000) : "";
 
   try {
     if (!name) {
@@ -1247,6 +1247,11 @@ export async function upsertCategory(input: CategoryMutationInput): Promise<Admi
     });
 
     invalidateCatalogSnapshotCache();
+    try {
+      await refreshCatalogSnapshotNow();
+    } catch {
+      // Keep save success even if snapshot refresh fails; next read will refresh lazily.
+    }
 
     return result;
   } catch (error) {

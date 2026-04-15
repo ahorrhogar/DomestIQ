@@ -1290,6 +1290,10 @@ export async function initializeCatalogSource(): Promise<void> {
   await ensureInitialized();
 }
 
+export async function refreshCatalogSnapshotNow(): Promise<void> {
+  await refreshSnapshot();
+}
+
 export function invalidateCatalogSnapshotCache(): void {
   snapshotFetchedAt = 0;
 }

@@ -99,7 +99,20 @@ export default function AdminCategoriesPage() {
 
   const saveMutation = useMutation({
     mutationFn: upsertCategory,
-    onSuccess: async () => {
+    onSuccess: async (savedCategory) => {
+      queryClient.setQueryData<AdminCategoryRecord[] | undefined>(["admin-categories"], (previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        const exists = previous.some((row) => row.id === savedCategory.id);
+        if (!exists) {
+          return [savedCategory, ...previous];
+        }
+
+        return previous.map((row) => (row.id === savedCategory.id ? { ...row, ...savedCategory } : row));
+      });
+
       await queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       toast.success(form.id ? "Categoria actualizada" : "Categoria creada");
       setDialogOpen(false);
@@ -311,6 +324,7 @@ export default function AdminCategoriesPage() {
               <TableHead>Categoria</TableHead>
               <TableHead>Padre</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Imagen</TableHead>
               <TableHead>Productos</TableHead>
               <TableHead>Orden</TableHead>
               <TableHead>Actualizada</TableHead>
@@ -320,7 +334,7 @@ export default function AdminCategoriesPage() {
           <TableBody>
             {categoriesQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   Cargando categorias...
                 </TableCell>
               </TableRow>
@@ -328,7 +342,7 @@ export default function AdminCategoriesPage() {
 
             {categoriesQuery.error ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-destructive">
+                <TableCell colSpan={9} className="text-center text-destructive">
                   {categoriesQuery.error instanceof Error ? categoriesQuery.error.message : "No se pudieron cargar categorias"}
                 </TableCell>
               </TableRow>
@@ -355,6 +369,20 @@ export default function AdminCategoriesPage() {
                     {category.isActive ? "Activa" : "Inactiva"}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  {category.imageUrl ? (
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={category.imageUrl}
+                        alt={category.name}
+                        className="h-8 w-8 rounded object-cover"
+                      />
+                      <span className="text-xs text-muted-foreground">Asignada</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Sin imagen</span>
+                  )}
+                </TableCell>
                 <TableCell>{formatNumber(category.productCount)}</TableCell>
                 <TableCell>{category.sortOrder}</TableCell>
                 <TableCell>{formatDate(category.updatedAt)}</TableCell>
@@ -373,7 +401,7 @@ export default function AdminCategoriesPage() {
 
             {!categoriesQuery.isLoading && !categoriesQuery.error && !filteredRows.length ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   No se encontraron categorias.
                 </TableCell>
               </TableRow>
