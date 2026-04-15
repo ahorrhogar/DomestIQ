@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Sparkles, TrendingDown } from 'lucide-react';
 
+const HERO_MASCOT_IMAGE = '/homara-mascot.png';
+
 const Hero = () => (
   <section className="relative overflow-hidden bg-gradient-hero">
     <div className="absolute inset-0 overflow-hidden">
@@ -11,37 +13,54 @@ const Hero = () => (
     </div>
 
     <div className="container mx-auto px-4 py-14 md:py-20 relative z-10">
-      <div className="max-w-3xl">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-foreground/10 text-primary-foreground/90 text-sm mb-5 animate-fade-in">
-          <TrendingDown className="w-4 h-4 text-accent" />
-          Más de 15.000 productos comparados en tiempo real
+      <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(340px,520px)] lg:gap-10">
+        <div>
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-foreground/10 text-primary-foreground/90 text-sm mb-5 animate-fade-in">
+            <TrendingDown className="w-4 h-4 text-accent" />
+            Más de 15.000 productos comparados en tiempo real
+          </div>
+
+          <h2 className="font-display text-3xl md:text-5xl lg:text-6xl font-bold text-primary-foreground leading-tight mb-5 animate-slide-up">
+            El mejor precio para
+            <span className="block text-accent">tu hogar</span>
+          </h2>
+
+          <p className="text-lg md:text-xl text-primary-foreground/80 mb-7 max-w-xl leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
+            Compara precios de muebles, electrodomésticos, decoración y más entre las mejores tiendas de España. Ahorra hasta un 40% en cada compra.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <Link to="/categoria/muebles" className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold text-base hover:opacity-90 transition-all shadow-glow">
+              Empezar a comparar
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link to="/asistente" className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-primary-foreground/10 text-primary-foreground font-semibold text-base hover:bg-primary-foreground/20 transition-all border border-primary-foreground/20">
+              <Sparkles className="w-4 h-4" />
+              Asistente de Compras
+            </Link>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-6 text-primary-foreground/60 text-sm animate-fade-in" style={{ animationDelay: '0.4s' }}>
+            <span className="flex items-center gap-1.5">✓ 100% gratuito</span>
+            <span className="flex items-center gap-1.5">✓ Sin registro</span>
+            <span className="flex items-center gap-1.5">✓ +200 tiendas</span>
+            <span className="flex items-center gap-1.5">✓ Actualizado diariamente</span>
+          </div>
         </div>
 
-        <h2 className="font-display text-3xl md:text-5xl lg:text-6xl font-bold text-primary-foreground leading-tight mb-5 animate-slide-up">
-          El mejor precio para
-          <span className="block text-accent">tu hogar</span>
-        </h2>
-
-        <p className="text-lg md:text-xl text-primary-foreground/80 mb-7 max-w-xl leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
-          Compara precios de muebles, electrodomésticos, decoración y más entre las mejores tiendas de España. Ahorra hasta un 40% en cada compra.
-        </p>
-
-        <div className="flex flex-col sm:flex-row gap-3 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          <Link to="/categoria/muebles" className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold text-base hover:opacity-90 transition-all shadow-glow">
-            Empezar a comparar
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link to="/asistente" className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-primary-foreground/10 text-primary-foreground font-semibold text-base hover:bg-primary-foreground/20 transition-all border border-primary-foreground/20">
-            <Sparkles className="w-4 h-4" />
-            Asistente de Compras
-          </Link>
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center gap-6 text-primary-foreground/60 text-sm animate-fade-in" style={{ animationDelay: '0.4s' }}>
-          <span className="flex items-center gap-1.5">✓ 100% gratuito</span>
-          <span className="flex items-center gap-1.5">✓ Sin registro</span>
-          <span className="flex items-center gap-1.5">✓ +200 tiendas</span>
-          <span className="flex items-center gap-1.5">✓ Actualizado diariamente</span>
+        <div className="relative mx-auto w-full max-w-[520px] animate-fade-in" style={{ animationDelay: '0.15s' }}>
+          <div className="absolute -left-8 top-1/2 h-24 w-24 -translate-y-1/2 rounded-full border border-primary-foreground/20" />
+          <div className="absolute -right-6 top-8 h-36 w-36 rounded-full border border-primary-foreground/15" />
+          <img
+            src={HERO_MASCOT_IMAGE}
+            alt="Mascota de Homara"
+            className="relative z-10 mx-auto w-full max-h-[520px] object-contain drop-shadow-[0_22px_28px_rgba(5,18,49,0.28)]"
+            loading="eager"
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+              event.currentTarget.src = '/homara-logo.svg';
+            }}
+          />
         </div>
       </div>
     </div>
