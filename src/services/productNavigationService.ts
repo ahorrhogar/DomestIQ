@@ -1,6 +1,7 @@
 import type { Offer, Product } from "@/domain/catalog/types";
 import { extractDomainFromAffiliateUrl, isAffiliateUrlAllowed } from "@/infrastructure/security/affiliateUrl";
 import { analyticsService } from "@/services/analyticsService";
+import { canUseAnalytics } from "@/services/cookieConsentService";
 import { offerService } from "@/services/offerService";
 
 const useRedirectApi = (import.meta.env.VITE_USE_REDIRECT_API || "false") === "true";
@@ -38,7 +39,7 @@ export function getProductNavigationTarget(product: Product): ProductNavigationT
   }
 
   const href = useRedirectApi
-    ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}`
+    ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}&track=${canUseAnalytics() ? "1" : "0"}`
     : offer.url;
 
   return {

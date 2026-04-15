@@ -1,5 +1,6 @@
 import { mockCatalogSource } from "@/data/sources/mockCatalogSource";
 import type { Merchant, Offer, PriceAnalysis, PriceHistory } from "@/domain/catalog/types";
+import { canUseAnalytics } from "@/services/cookieConsentService";
 
 export interface OfferService {
   getMerchants(): Merchant[];
@@ -27,6 +28,10 @@ class MockOfferService implements OfferService {
   }
 
   async trackClick(productId: string, merchantId: string): Promise<void> {
+    if (!canUseAnalytics()) {
+      return;
+    }
+
     if (mockCatalogSource.trackClick) {
       await mockCatalogSource.trackClick(productId, merchantId);
     }

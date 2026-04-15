@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
 import { categoryService } from '@/services';
+import { useCookieConsent } from '@/hooks/useCookieConsent';
 
 const Footer = () => {
   const categories = categoryService.getAllCategories();
+  const { openCookieSettings } = useCookieConsent();
 
   return (
     <footer className="bg-primary text-primary-foreground">
@@ -56,7 +58,16 @@ const Footer = () => {
           <ul className="space-y-1.5">
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Política de privacidad</a></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Aviso legal</a></li>
-            <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Cookies</a></li>
+            <li><Link to="/politica-cookies" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Política de cookies</Link></li>
+            <li>
+              <button
+                type="button"
+                onClick={openCookieSettings}
+                className="text-sm text-primary-foreground/60 hover:text-accent transition-colors"
+              >
+                Configuración de cookies
+              </button>
+            </li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Condiciones de uso</a></li>
           </ul>
         </div>

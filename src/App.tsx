@@ -7,15 +7,19 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ScrollToTop from "@/components/ScrollToTop";
+import CookieBanner from "@/components/layout/CookieBanner";
 import { AdminAuthProvider } from "@/admin/hooks/useAdminAuth";
 import { AdminGuard } from "@/admin/components/AdminGuard";
 import { AdminLayout } from "@/admin/components/AdminLayout";
+import { CookieConsentProvider } from "@/contexts/CookieConsentContext";
+import { useCookieConsent } from "@/hooks/useCookieConsent";
 import Index from "./pages/Index.tsx";
 import CategoryPage from "./pages/CategoryPage.tsx";
 import ProductPage from "./pages/ProductPage.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
 import AssistantPage from "./pages/AssistantPage.tsx";
 import AboutPage from "./pages/AboutPage.tsx";
+import CookiesPolicyPage from "./pages/CookiesPolicyPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const AdminLoginPage = lazy(() => import("./pages/admin/AdminLoginPage.tsx"));
@@ -33,11 +37,11 @@ const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage.tsx
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
+function AppRuntime() {
+  const { canUseAnalytics } = useCookieConsent();
+
+  return (
+    <>
       <BrowserRouter>
         <AdminAuthProvider>
           <ScrollToTop />
@@ -50,6 +54,8 @@ const App = () => (
               <Route path="/buscar" element={<SearchPage />} />
               <Route path="/asistente" element={<AssistantPage />} />
               <Route path="/acerca-de" element={<AboutPage />} />
+              <Route path="/cookies" element={<CookiesPolicyPage />} />
+              <Route path="/politica-cookies" element={<CookiesPolicyPage />} />
 
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin/denegado" element={<AdminDeniedPage />} />
@@ -74,8 +80,27 @@ const App = () => (
           </Suspense>
         </AdminAuthProvider>
       </BrowserRouter>
-      <Analytics />
-      <SpeedInsights />
+
+      <CookieBanner />
+
+      {canUseAnalytics() ? (
+        <>
+          <Analytics />
+          <SpeedInsights />
+        </>
+      ) : null}
+    </>
+  );
+}
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <CookieConsentProvider>
+        <AppRuntime />
+      </CookieConsentProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

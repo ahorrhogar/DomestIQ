@@ -14,6 +14,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { Star, Tag, TrendingDown, Bell, ExternalLink, Truck, ShieldCheck, ChevronDown, ChevronUp, TrendingUp, Minus, ChevronLeft, ChevronRight, Share2, Link as LinkIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { analyticsService, categoryService, offerService, productService } from '@/services';
+import { canUseAnalytics } from '@/services/cookieConsentService';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
 import type { Merchant } from '@/domain/catalog/types';
 import { extractDomainFromAffiliateUrl, isAffiliateUrlAllowed } from '@/infrastructure/security/affiliateUrl';
@@ -336,7 +337,7 @@ const ProductPage = () => {
               {offers.map((offer, i) => {
                 const directUrlSafe = isOfferDirectUrlSafe(offer.url, offer.merchant.url);
                 const finalHref = useRedirectApi
-                  ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}`
+                  ? `/api/redirect?offerId=${encodeURIComponent(offer.id)}&track=${canUseAnalytics() ? '1' : '0'}`
                   : directUrlSafe
                     ? offer.url
                     : "#";

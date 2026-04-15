@@ -8,6 +8,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   const offerId = requestUrl.searchParams.get("offerId") || "";
+  const shouldTrack = requestUrl.searchParams.get("track") === "1";
 
   if (!uuidPattern.test(offerId)) {
     return Response.json({ error: "Invalid offerId" }, { status: 400 });
@@ -35,7 +36,9 @@ export async function GET(request: Request): Promise<Response> {
       return Response.json({ error: "Unsafe redirect URL" }, { status: 400 });
     }
 
-    await trackClick(offer.product_id, offer.merchant_id, supabase);
+    if (shouldTrack) {
+      await trackClick(offer.product_id, offer.merchant_id, supabase);
+    }
 
     return Response.redirect(offer.url, 302);
   } catch (error) {

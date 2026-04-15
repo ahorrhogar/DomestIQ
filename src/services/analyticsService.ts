@@ -2,6 +2,7 @@ import { isKnownAnalyticsEvent, type AnalyticsEvent } from "@/infrastructure/ana
 import { logger } from "@/infrastructure/logging/logger";
 import { checkRateLimit } from "@/infrastructure/rate-limit/rateLimiter";
 import { sanitizeAnalyticsEvent } from "@/infrastructure/security/sanitize";
+import { canUseAnalytics } from "@/services/cookieConsentService";
 
 export interface AnalyticsService {
   track(event: AnalyticsEvent): void;
@@ -12,6 +13,10 @@ class InMemoryAnalyticsService implements AnalyticsService {
   private queue: AnalyticsEvent[] = [];
 
   track(event: AnalyticsEvent): void {
+    if (!canUseAnalytics()) {
+      return;
+    }
+
     if (!isKnownAnalyticsEvent(event.name)) {
       logger.log({
         level: "warn",
