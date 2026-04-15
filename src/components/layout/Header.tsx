@@ -55,6 +55,16 @@ const Header = () => {
 
   const activeCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
   const mobileActiveCategory = categories.find((category) => category.id === mobileActiveCategoryId);
+  const toggleMegaMenu = () => {
+    setMegaMenuOpen((previous) => {
+      const nextOpen = !previous;
+      if (nextOpen) {
+        setActiveCategoryId(categories[0]?.id || null);
+        setMobileActiveCategoryId(null);
+      }
+      return nextOpen;
+    });
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
@@ -74,19 +84,10 @@ const Header = () => {
 
       {/* Main header */}
       <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-4">
           {/* Hamburger mega menu trigger */}
           <button
-            onClick={() => {
-              setMegaMenuOpen((previous) => {
-                const nextOpen = !previous;
-                if (nextOpen) {
-                  setActiveCategoryId(categories[0]?.id || null);
-                  setMobileActiveCategoryId(null);
-                }
-                return nextOpen;
-              });
-            }}
+            onClick={toggleMegaMenu}
             className="p-2 rounded-lg hover:bg-secondary transition-colors"
             aria-label="Menú de categorías"
           >
@@ -97,13 +98,13 @@ const Header = () => {
             <img
               src="/homara-logo.svg"
               alt="Homara"
-              className="h-9 w-auto md:h-11"
+              className="h-11 w-auto"
               loading="eager"
               decoding="async"
             />
           </Link>
 
-          <div className="flex-1 max-w-2xl hidden md:block">
+          <div className="flex-1 max-w-2xl">
             <form className="relative" onSubmit={handleSearchSubmit}>
               <button
                 type="submit"
@@ -133,9 +134,18 @@ const Header = () => {
           </div>
         </div>
 
-        {/* Mobile search */}
-        <div className="md:hidden mt-3">
-          <form className="relative" onSubmit={handleSearchSubmit}>
+        <div className="flex items-center gap-2 md:hidden">
+          <Link to="/" className="flex-shrink-0">
+            <img
+              src="/homara-logo.svg"
+              alt="Homara"
+              className="h-9 w-auto"
+              loading="eager"
+              decoding="async"
+            />
+          </Link>
+
+          <form className="relative flex-1" onSubmit={handleSearchSubmit}>
             <button
               type="submit"
               aria-label="Buscar"
@@ -151,6 +161,14 @@ const Header = () => {
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-secondary/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
             />
           </form>
+
+          <button
+            onClick={toggleMegaMenu}
+            className="p-2 rounded-lg hover:bg-secondary transition-colors"
+            aria-label="Menú de categorías"
+          >
+            {megaMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
       </div>
 
