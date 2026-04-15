@@ -538,6 +538,10 @@ export function mapAdminErrorMessage(error: SupabaseLikeError | null | undefined
     return "Tienda duplicada: ya existe una tienda con ese nombre.";
   }
 
+  if ((raw.includes("duplicate key") && raw.includes("categories")) || raw.includes("idx_categories_slug_parent_unique")) {
+    return "Categoria duplicada: ya existe una categoria con el mismo slug dentro del mismo nivel.";
+  }
+
   if (raw.includes("genera un ciclo") || raw.includes("categoria no puede ser su propio padre")) {
     return "No se puede guardar la categoria porque se genera un ciclo en la jerarquia.";
   }
@@ -1188,7 +1192,8 @@ export async function upsertCategory(input: CategoryMutationInput): Promise<Admi
       throw new Error("La categoria requiere una URL de imagen valida (http/https)");
     }
 
-    const slug = normalizeSlug(input.slug || name);
+    const normalizedInputSlug = normalizeSlug(input.slug || "");
+    const slug = input.id ? (normalizedInputSlug || null) : normalizeSlug(normalizedInputSlug || name);
 
     const payload = {
       name,

@@ -130,7 +130,7 @@ export default function AdminCategoriesPage() {
       setForm((prev) => ({ ...prev, imageUrl: url }));
       setUploadFile(null);
       setUploadInputKey((prev) => prev + 1);
-      toast.success("Imagen subida y asignada");
+      toast.success("Imagen subida y asignada. Pulsa Guardar para aplicar el cambio");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "No se pudo subir la imagen");
