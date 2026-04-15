@@ -53,6 +53,17 @@ const Header = () => {
     navigate(`/buscar?q=${encodeURIComponent(trimmedQuery)}`);
   };
 
+  const toggleMegaMenu = () => {
+    setMegaMenuOpen((previous) => {
+      const nextOpen = !previous;
+      if (nextOpen) {
+        setActiveCategoryId(categories[0]?.id || null);
+        setMobileActiveCategoryId(null);
+      }
+      return nextOpen;
+    });
+  };
+
   const activeCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
   const mobileActiveCategory = categories.find((category) => category.id === mobileActiveCategoryId);
 
@@ -77,17 +88,8 @@ const Header = () => {
         <div className="flex items-center gap-2 md:gap-4">
           {/* Hamburger mega menu trigger */}
           <button
-            onClick={() => {
-              setMegaMenuOpen((previous) => {
-                const nextOpen = !previous;
-                if (nextOpen) {
-                  setActiveCategoryId(categories[0]?.id || null);
-                  setMobileActiveCategoryId(null);
-                }
-                return nextOpen;
-              });
-            }}
-            className="p-2 rounded-lg hover:bg-secondary transition-colors"
+            onClick={toggleMegaMenu}
+            className="hidden p-2 rounded-lg hover:bg-secondary transition-colors md:inline-flex"
             aria-label="Menú de categorías"
           >
             {megaMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -148,6 +150,13 @@ const Header = () => {
             </Link>
             <button className="p-2 rounded-lg hover:bg-secondary transition-colors">
               <Heart className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <button
+              onClick={toggleMegaMenu}
+              className="p-2 rounded-lg hover:bg-secondary transition-colors md:hidden"
+              aria-label="Menú de categorías"
+            >
+              {megaMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
