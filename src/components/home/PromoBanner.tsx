@@ -6,30 +6,32 @@ interface PromoBannerProps {
   title: string;
   subtitle: string;
   cta: string;
-  href: string;
+  href?: string;
+  resolveHref?: () => string;
   image: string;
-  getHref?: () => string;
   /** 'left' = text left image right, 'right' = opposite, 'full' = full-width image bg */
   layout?: 'left' | 'right' | 'full';
   className?: string;
 }
 
-const PromoBanner = ({ title, subtitle, cta, href, image, getHref, layout = 'left', className = '' }: PromoBannerProps) => {
+const PromoBanner = ({ title, subtitle, cta, href, resolveHref, image, layout = 'left', className = '' }: PromoBannerProps) => {
   const navigate = useNavigate();
+  const targetHref = href || '/';
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!getHref) {
+    if (!resolveHref) {
       return;
     }
 
     event.preventDefault();
-    navigate(getHref());
+    const nextHref = resolveHref();
+    navigate(nextHref || targetHref);
   };
 
   if (layout === 'full') {
     return (
       <Link
-        to={href}
+        to={targetHref}
         onClick={handleClick}
         className={`group block relative rounded-2xl overflow-hidden h-[200px] md:h-[240px] ${className}`}
       >
@@ -50,7 +52,7 @@ const PromoBanner = ({ title, subtitle, cta, href, image, getHref, layout = 'lef
 
   return (
     <Link
-      to={href}
+      to={targetHref}
       onClick={handleClick}
       className={`group block rounded-2xl overflow-hidden border border-border bg-card hover:shadow-card-hover transition-all duration-300 ${className}`}
     >
