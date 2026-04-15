@@ -82,7 +82,7 @@ const TrendingCategories = () => {
                     <img
                       src={categoryPreviewImage}
                       alt={category.name}
-                      className="w-full h-full object-contain p-2"
+                      className="w-full h-full object-cover"
                       loading="lazy"
                       onError={(event) => applyProductImageFallback(event.currentTarget)}
                     />
@@ -115,7 +115,7 @@ const TrendingCategories = () => {
                         <img
                           src={subPreviewImage}
                           alt={sub.name}
-                          className="w-full h-full object-contain p-2"
+                          className="w-full h-full object-cover"
                           loading="lazy"
                           onError={(event) => applyProductImageFallback(event.currentTarget)}
                         />
