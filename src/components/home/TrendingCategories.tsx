@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { categoryService, productService } from '@/services';
+import { categoryService } from '@/services';
 import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
 
 const TrendingCategories = () => {
   const categories = categoryService.getAllCategories();
-  const products = productService.getAllProducts();
   const trending = categoryService.getTrendingCategories();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -24,7 +23,7 @@ const TrendingCategories = () => {
     const onResize = () => checkScroll();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [trending.length, categories.length, products.length]);
+  }, [trending.length, categories.length]);
 
   const scroll = (dir: 'left' | 'right') => {
     if (!scrollRef.current) return;
@@ -65,10 +64,9 @@ const TrendingCategories = () => {
             onScroll={checkScroll}
             className="flex gap-6 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1"
           >
-            {trending.map(({ category, topProduct }) => {
+            {trending.map(({ category }) => {
               const categoryPreviewImage =
                 category.image ||
-                topProduct?.images.find((image) => Boolean(image)) ||
                 PRODUCT_IMAGE_FALLBACK;
 
               return (
@@ -98,11 +96,8 @@ const TrendingCategories = () => {
               (cat.subcategories || [])
                 .filter(sub => sub.productCount > 0)
                 .map(sub => {
-                  const subProduct = products.find(p => p.subcategoryId === sub.id);
-                  if (!subProduct) return null;
                   const subPreviewImage =
                     sub.image ||
-                    subProduct.images.find((image) => Boolean(image)) ||
                     PRODUCT_IMAGE_FALLBACK;
                   return (
                     <Link

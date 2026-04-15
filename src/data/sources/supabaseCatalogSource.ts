@@ -12,6 +12,7 @@ import type {
 import { logger } from "@/infrastructure/logging/logger";
 import { getSupabaseClient, type SupabaseClientLike } from "@/integrations/supabase/client";
 import type { CatalogRankingSignals, ExtendedCatalogDataSource } from "@/data/sources/catalogSource.types";
+import { PRODUCT_IMAGE_FALLBACK } from "@/lib/productImage";
 
 interface BrandRow {
   id: string;
@@ -168,17 +169,14 @@ const categoryMetaBySlug: Record<string, { icon: string; description: string; im
   muebles: {
     icon: "Sofa",
     description: "Sofas, mesas, estanterias y mas para tu hogar",
-    image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop",
   },
   cocina: {
     icon: "ChefHat",
     description: "Todo para tu cocina: sartenes, ollas y pequenos electrodomesticos",
-    image: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop",
   },
   electrodomesticos: {
     icon: "Zap",
     description: "Lavadoras, aspiradoras y soluciones para el hogar",
-    image: "https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=400&h=300&fit=crop",
   },
 };
 
@@ -701,7 +699,7 @@ function buildCategories(
       categoryId: row.id,
       name: subRow.name,
       slug: subRow.slug ? slugify(subRow.slug) : slugify(subRow.name),
-      image: subRow.image_url || undefined,
+      image: subRow.image_url || PRODUCT_IMAGE_FALLBACK,
       productCount: productCountBySubcategoryId.get(subRow.id) || 0,
     }));
 
@@ -714,7 +712,7 @@ function buildCategories(
       slug,
       icon: row.icon || meta.icon,
       description: meta.description,
-      image: row.image_url || meta.image,
+      image: row.image_url || meta.image || PRODUCT_IMAGE_FALLBACK,
       productCount: directCount + nestedCount,
       subcategories,
     };
