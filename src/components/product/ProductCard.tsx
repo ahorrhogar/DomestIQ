@@ -83,16 +83,8 @@ const ProductCard = ({ product }: { product: Product }) => {
   );
 };
 
-interface ProductGridProps {
-  products: Product[];
-  title: string;
-  subtitle?: string;
-  showAll?: string;
-  sectionId?: string;
-}
-
-export const ProductGrid = ({ products, title, subtitle, showAll, sectionId }: ProductGridProps) => (
-  <section id={sectionId} className="py-12">
+export const ProductGrid = ({ products, title, subtitle, showAll }: { products: Product[]; title: string; subtitle?: string; showAll?: string }) => (
+  <section className="py-12">
     <div className="container mx-auto px-4">
       <div className="flex items-end justify-between mb-8">
         <div>
