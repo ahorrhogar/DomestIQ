@@ -152,9 +152,9 @@ const ProductPage = () => {
           <Breadcrumb items={breadcrumbs} />
 
           {/* Product main */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-12">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
             {/* Gallery */}
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="bg-secondary/30 rounded-2xl p-8 flex items-center justify-center aspect-square relative overflow-hidden">
                 {selectedImage ? (
                   <img
@@ -264,16 +264,16 @@ const ProductPage = () => {
               </div>
 
               {/* Price */}
-              <div className="mb-6 p-4 rounded-xl bg-card border border-border">
+              <div className="mb-6 min-w-0 rounded-xl border border-border bg-card p-4">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm text-muted-foreground">Mejor precio desde</span>
                 </div>
-                <div className="flex items-baseline gap-3 mt-1">
+                <div className="mt-1 flex flex-wrap items-baseline gap-2 sm:gap-3">
                   <span className="text-3xl font-bold text-foreground">{product.minPrice.toFixed(2).replace('.', ',')} €</span>
                   {product.originalPrice && product.originalPrice > product.minPrice && (
                     <>
                       <span className="text-lg text-muted-foreground line-through">{product.originalPrice.toFixed(2).replace('.', ',')} €</span>
-                      <span className="px-2 py-0.5 rounded-md bg-deal text-deal-foreground text-xs font-bold">
+                      <span className="max-w-full break-words rounded-md bg-deal px-2 py-0.5 text-xs font-bold text-deal-foreground">
                         Ahorras {(product.originalPrice - product.minPrice).toFixed(2).replace('.', ',')} €
                       </span>
                     </>
@@ -332,7 +332,7 @@ const ProductPage = () => {
             <h3 className="font-display text-xl font-bold text-foreground mb-5 flex items-center gap-2">
               <Tag className="w-5 h-5 text-accent" /> Comparar ofertas ({offers.length} tiendas)
             </h3>
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               {offers.map((offer, i) => {
                 const directUrlSafe = isOfferDirectUrlSafe(offer.url, offer.merchant.url);
                 const finalHref = useRedirectApi
@@ -342,15 +342,15 @@ const ProductPage = () => {
                     : "#";
 
                 return (
-                <div key={offer.id} className={`group flex flex-col md:flex-row md:items-center justify-between p-4 md:p-5 rounded-xl border transition-all hover:shadow-card ${
+                <div key={offer.id} className={`group flex min-w-0 flex-col justify-between gap-4 rounded-xl border p-4 transition-all hover:shadow-card md:flex-row md:items-center md:p-5 ${
                   i === 0 ? 'border-deal bg-deal/5 shadow-sm' : 'border-border bg-card hover:border-accent/30'
-                } gap-4`}>
+                }`}>
                   {/* Merchant info with logo */}
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <MerchantLogo merchant={offer.merchant} />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-semibold text-foreground">{offer.merchant.name}</h4>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="min-w-0 break-words font-semibold text-foreground">{offer.merchant.name}</h4>
                         {i === 0 && (
                           <span className="px-2 py-0.5 rounded-md bg-deal text-deal-foreground text-[10px] font-bold uppercase tracking-wide">
                             Mejor precio
@@ -423,7 +423,7 @@ const ProductPage = () => {
                           void offerService.trackClick(product.id, offer.merchantId);
                         }
                       }}
-                      className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                      className={`flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
                         i === 0
                           ? 'bg-accent text-accent-foreground hover:opacity-90 shadow-glow'
                           : 'bg-secondary text-foreground hover:bg-accent hover:text-accent-foreground'
