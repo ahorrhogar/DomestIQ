@@ -41,6 +41,33 @@ const MerchantLogo = ({ merchant }: { merchant: Merchant }) => {
   );
 };
 
+const SPEC_VALUE_PREVIEW_LENGTH = 160;
+
+const SpecValue = ({ value }: { value: string }) => {
+  const [expanded, setExpanded] = useState(false);
+  const normalizedValue = value.trim();
+  const shouldTruncate = normalizedValue.length > SPEC_VALUE_PREVIEW_LENGTH;
+  const displayValue = shouldTruncate && !expanded
+    ? `${normalizedValue.slice(0, SPEC_VALUE_PREVIEW_LENGTH).trimEnd()}...`
+    : normalizedValue;
+
+  return (
+    <div className="min-w-0 text-right">
+      <span className="font-medium text-foreground min-w-0 break-words leading-snug">{displayValue}</span>
+      {shouldTruncate && (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          className="mt-1 block w-full text-right text-xs font-medium text-accent hover:underline"
+        >
+          {expanded ? "Leer menos" : "Leer mas"}
+        </button>
+      )}
+    </div>
+  );
+};
+
 const ProductPage = () => {
   const { slug } = useParams();
   const product = slug ? productService.getProductBySlug(slug) : undefined;
@@ -307,9 +334,9 @@ const ProductPage = () => {
                 <h3 className="font-semibold text-foreground mb-3">Especificaciones</h3>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {visibleSpecs.map((spec, i) => (
-                    <div key={i} className="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-secondary/50 text-sm min-w-0">
-                      <span className="text-muted-foreground min-w-0 break-words">{spec.label}</span>
-                      <span className="font-medium text-foreground min-w-0 break-words text-right">{spec.value}</span>
+                    <div key={i} className="grid grid-cols-[minmax(8.5rem,40%)_1fr] items-start gap-3 p-2.5 rounded-lg bg-secondary/50 text-sm min-w-0">
+                      <span className="text-muted-foreground break-normal leading-snug">{spec.label}</span>
+                      <SpecValue value={spec.value} />
                     </div>
                   ))}
                 </div>

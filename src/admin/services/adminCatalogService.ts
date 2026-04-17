@@ -422,6 +422,23 @@ const TECHNICAL_SPEC_META_KEYS = new Set([
   "attributes",
 ]);
 
+function normalizeTechnicalSpecText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (!["string", "number", "boolean"].includes(typeof value)) {
+    return "";
+  }
+
+  const normalized = String(value).replace(/\s+/g, " ").trim();
+  if (!normalized || containsControlCharacters(normalized)) {
+    return "";
+  }
+
+  return normalized;
+}
+
 function parseTechnicalSpecsFromValue(value: unknown, filterMetaKeys = false): Array<{ label: string; value: string }> {
   if (Array.isArray(value)) {
     return value
@@ -431,8 +448,8 @@ function parseTechnicalSpecsFromValue(value: unknown, filterMetaKeys = false): A
         }
 
         const record = entry as Record<string, unknown>;
-        const label = sanitizeText(typeof record.label === "string" ? record.label : "", 60);
-        const specValue = sanitizeText(typeof record.value === "string" ? record.value : "", 200);
+        const label = normalizeTechnicalSpecText(record.label);
+        const specValue = normalizeTechnicalSpecText(record.value);
 
         if (!label || !specValue) {
           return null;
@@ -452,7 +469,7 @@ function parseTechnicalSpecsFromValue(value: unknown, filterMetaKeys = false): A
 
   return Object.entries(value as Record<string, unknown>)
     .map(([label, rawValue]) => {
-      const normalizedLabel = sanitizeText(label, 60);
+      const normalizedLabel = normalizeTechnicalSpecText(label);
       const normalizedLabelKey = normalizedLabel.toLowerCase().replace(/[^a-z0-9]/g, "");
 
       if (!normalizedLabel || (filterMetaKeys && TECHNICAL_SPEC_META_KEYS.has(normalizedLabelKey))) {
@@ -463,11 +480,7 @@ function parseTechnicalSpecsFromValue(value: unknown, filterMetaKeys = false): A
         return null;
       }
 
-      if (!["string", "number", "boolean"].includes(typeof rawValue)) {
-        return null;
-      }
-
-      const normalizedValue = sanitizeText(String(rawValue), 200);
+      const normalizedValue = normalizeTechnicalSpecText(rawValue);
       if (!normalizedValue) {
         return null;
       }
@@ -496,8 +509,8 @@ function parseTechnicalSpecs(specs: Record<string, unknown>, attributes?: Record
 
 function toTechnicalSpecObject(rows: Array<{ label: string; value: string }> = []) {
   return rows.reduce<Record<string, string>>((acc, row) => {
-    const label = sanitizeText(row.label, 60);
-    const value = sanitizeText(row.value, 200);
+    const label = normalizeTechnicalSpecText(row.label);
+    const value = normalizeTechnicalSpecText(row.value);
 
     if (!label || !value) {
       return acc;
