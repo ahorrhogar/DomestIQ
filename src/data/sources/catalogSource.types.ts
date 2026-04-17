@@ -35,6 +35,17 @@ export interface ExtendedCatalogDataSource extends CatalogDataSource {
   searchProducts?(query: string, limit?: number): Promise<Product[]>;
   getOffersByProduct?(productId: string): Offer[];
   trackClick?(productId: string, merchantId: string): Promise<void>;
+  trackSearchTerm?(
+    term: string,
+    options?: {
+      sessionId?: string;
+      resultCount?: number;
+      topProductId?: string;
+      path?: string;
+      ipAddress?: string;
+      userAgent?: string;
+    },
+  ): Promise<void>;
   getOfferRedirectPayload?(
     offerId: string,
   ): Promise<{ id: string; product_id: string; merchant_id: string; url: string } | null>;

@@ -9,6 +9,7 @@ import { AdminNoIndex } from "@/admin/components/AdminNoIndex";
 
 const adminNavItems = [
   { to: "/admin", label: "Dashboard", exact: true },
+  { to: "/admin/articulos", label: "Articulos" },
   { to: "/admin/productos", label: "Productos" },
   { to: "/admin/ofertas", label: "Ofertas" },
   { to: "/admin/marcas", label: "Marcas" },

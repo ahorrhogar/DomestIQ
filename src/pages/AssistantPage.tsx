@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Sparkles, ArrowRight, Search, Star, Award, DollarSign } from 'lucide-react';
 import type { AssistantPriority, AssistantResult } from '@/domain/catalog/types';
 import { analyticsService, categoryService, productService } from '@/services';
+import { searchTrackingService } from '@/services/searchTrackingService';
 import ProductDestinationLink from '@/components/product/ProductDestinationLink';
 import { getProductNavigationTarget } from '@/services/productNavigationService';
 import { applyProductImageFallback, PRODUCT_IMAGE_FALLBACK } from '@/lib/productImage';
@@ -51,6 +52,13 @@ const AssistantPage = () => {
         style: style || 'any',
         results: nextResults.length,
       },
+    });
+
+    void searchTrackingService.track({
+      term: `${categoryId || 'general'} ${style || ''} ${priority}`.trim(),
+      resultCount: nextResults.length,
+      topProductId: nextResults[0]?.product.id,
+      path: '/asistente',
     });
 
     setResults(nextResults);

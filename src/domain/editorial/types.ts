@@ -1,4 +1,4 @@
-export type ArticleStatus = "published" | "draft";
+export type ArticleStatus = "published" | "draft" | "inactive";
 
 export type ArticleIntent =
   | "comparativa"

@@ -7,6 +7,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ScrollToTop from "@/components/ScrollToTop";
+import BlogRouteTracker from "@/components/analytics/BlogRouteTracker";
 import CookieBanner from "@/components/layout/CookieBanner";
 import { AdminAuthProvider } from "@/admin/hooks/useAdminAuth";
 import { AdminGuard } from "@/admin/components/AdminGuard";
@@ -25,6 +26,7 @@ import NotFound from "./pages/NotFound.tsx";
 const AdminLoginPage = lazy(() => import("./pages/admin/AdminLoginPage.tsx"));
 const AdminDeniedPage = lazy(() => import("./pages/admin/AdminDeniedPage.tsx"));
 const AdminDashboardPage = lazy(() => import("./pages/admin/AdminDashboardPage.tsx"));
+const AdminArticlesPage = lazy(() => import("./pages/admin/AdminArticlesPage.tsx"));
 const AdminProductsPage = lazy(() => import("./pages/admin/AdminProductsPage.tsx"));
 const AdminOffersPage = lazy(() => import("./pages/admin/AdminOffersPage.tsx"));
 const AdminBrandsPage = lazy(() => import("./pages/admin/AdminBrandsPage.tsx"));
@@ -51,6 +53,7 @@ function AppRuntime() {
       <BrowserRouter>
         <AdminAuthProvider>
           <ScrollToTop />
+          <BlogRouteTracker />
           <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Cargando modulo...</div>}>
             <Routes>
               <Route path="/" element={<Index />} />
@@ -88,6 +91,7 @@ function AppRuntime() {
               <Route element={<AdminGuard />}>
                 <Route path="/admin" element={<AdminLayout />}>
                   <Route index element={<AdminDashboardPage />} />
+                  <Route path="articulos" element={<AdminArticlesPage />} />
                   <Route path="productos" element={<AdminProductsPage />} />
                   <Route path="ofertas" element={<AdminOffersPage />} />
                   <Route path="marcas" element={<AdminBrandsPage />} />

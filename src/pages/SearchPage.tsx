@@ -6,6 +6,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ProductCard from "@/components/product/ProductCard";
 import { analyticsService, productService } from "@/services";
+import { searchTrackingService } from "@/services/searchTrackingService";
 import type { ProductSortBy } from "@/domain/catalog/types";
 
 const sortOptions: Array<{ value: ProductSortBy; label: string }> = [
@@ -48,7 +49,24 @@ const SearchPage = () => {
     enabled: query.length > 0,
   });
 
-  const results = searchQuery.data || [];
+  const results = useMemo(() => searchQuery.data || [], [searchQuery.data]);
+
+  useEffect(() => {
+    if (!query || query.length < 2) {
+      return;
+    }
+
+    if (searchQuery.isLoading || searchQuery.isError) {
+      return;
+    }
+
+    void searchTrackingService.track({
+      term: query,
+      resultCount: results.length,
+      topProductId: results[0]?.id,
+      path: "/buscar",
+    });
+  }, [query, results, searchQuery.isError, searchQuery.isLoading]);
 
   return (
     <div className="min-h-screen flex flex-col">

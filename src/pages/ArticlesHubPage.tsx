@@ -62,12 +62,47 @@ const ArticlesHubPage = () => {
   const [budgetRange, setBudgetRange] = useState<BudgetRangeFilter>("all");
   const [sortBy, setSortBy] = useState<ArticleSortBy>("recent");
   const [visibleCount, setVisibleCount] = useState(9);
+  const staticFilterOptions = useMemo(() => editorialService.getFilterOptions(), []);
 
-  const filterOptions = useMemo(() => editorialService.getFilterOptions(), []);
-  const featuredBase = useMemo(() => editorialService.getFeaturedArticles(6), []);
-  const mostRead = useMemo(() => editorialService.getMostReadArticles(6), []);
-  const latest = useMemo(() => editorialService.getLatestArticles(6), []);
-  const allPublished = useMemo(() => editorialService.getPublishedArticles(), []);
+  const editorialBaseQuery = useQuery({
+    queryKey: ["editorial-hub-base"],
+    queryFn: async () => {
+      const [filterOptions, featuredBase, mostRead, latest, allPublished] = await Promise.all([
+        editorialService.getFilterOptionsLive(),
+        editorialService.getFeaturedArticlesLive(6),
+        editorialService.getMostReadArticlesLive(6),
+        editorialService.getLatestArticlesLive(6),
+        editorialService.getPublishedArticlesLive(),
+      ]);
+
+      return {
+        filterOptions,
+        featuredBase,
+        mostRead,
+        latest,
+        allPublished,
+      };
+    },
+    staleTime: 60_000,
+  });
+
+  const filterOptions = editorialBaseQuery.data?.filterOptions || staticFilterOptions;
+  const featuredBase = useMemo(
+    () => editorialBaseQuery.data?.featuredBase || [],
+    [editorialBaseQuery.data?.featuredBase],
+  );
+  const mostRead = useMemo(
+    () => editorialBaseQuery.data?.mostRead || [],
+    [editorialBaseQuery.data?.mostRead],
+  );
+  const latest = useMemo(
+    () => editorialBaseQuery.data?.latest || [],
+    [editorialBaseQuery.data?.latest],
+  );
+  const allPublished = useMemo(
+    () => editorialBaseQuery.data?.allPublished || [],
+    [editorialBaseQuery.data?.allPublished],
+  );
   const trendingCategories = useMemo(() => categoryService.getTrendingCategories().slice(0, 4), []);
   const quickDealProducts = useMemo(() => productService.getDealProducts(3), []);
 
@@ -162,7 +197,7 @@ const ArticlesHubPage = () => {
   const feedQuery = useQuery({
     queryKey: ["editorial-feed", searchQuery, categorySlug, intent, budgetRange, sortBy],
     queryFn: () =>
-      editorialService.getArticlesFeed({
+      editorialService.getArticlesFeedLive({
         filters: {
           query: searchQuery,
           categorySlug,

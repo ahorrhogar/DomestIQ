@@ -132,6 +132,31 @@ export interface AdminClickRecord {
   createdAt: string;
 }
 
+export interface AdminEditorialArticleRecord {
+  id: string;
+  slug: string;
+  path: string;
+  title: string;
+  excerpt: string;
+  coverImage?: string;
+  coverImageAlt?: string;
+  coverTone: "warm" | "fresh" | "calm" | "contrast";
+  categorySlug: string;
+  categoryName: string;
+  intent: "comparativa" | "calidad-precio" | "ahorro" | "premium" | "guia-practica";
+  tags: string[];
+  readMinutes: number;
+  averageBudget?: number;
+  relatedCategorySlugs: string[];
+  relatedProductSlugs: string[];
+  publishedAt?: string;
+  updatedAt: string;
+  views: number;
+  isFeatured: boolean;
+  status: "draft" | "published" | "inactive";
+  sections: Array<{ heading: string; body: string }>;
+}
+
 export interface AdminActionRecord {
   id: string;
   userId: string;
@@ -216,6 +241,19 @@ export interface DashboardMetrics {
   featuredTopPerformers: Array<{ productId: string; productName: string; clicks: number; views: number }>;
   favoritesTotal: number | null;
   recentAdminActions: AdminActionRecord[];
+  editorial: {
+    totalArticles: number;
+    publishedArticles: number;
+    draftArticles: number;
+    inactiveArticles: number;
+    featuredArticles: number;
+    viewsLast30Days: number;
+    uniqueSessionsLast30Days: number;
+    searchesLeadingToBlogViews: number;
+    topViewedArticles: Array<{ articleId: string; slug: string; title: string; views: number }>;
+    dailyArticleViews: Array<{ day: string; views: number }>;
+    topBlogSearchTerms: Array<{ term: string; count: number }>;
+  };
   freshness: {
     lastClickAt?: string;
     lastSearchAt?: string;

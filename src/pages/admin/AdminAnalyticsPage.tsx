@@ -48,6 +48,14 @@ export default function AdminAnalyticsPage() {
     }));
   }, [metricsQuery.data]);
 
+  const dailyArticleViews = useMemo(() => {
+    return (metricsQuery.data?.editorial.dailyArticleViews || []).map((item) => ({
+      day: item.day,
+      label: toDayLabel(item.day),
+      views: item.views,
+    }));
+  }, [metricsQuery.data]);
+
   const searchTermsSeries = useMemo(() => {
     return (metricsQuery.data?.topSearchTerms || []).slice(0, 12).map((item) => ({
       term: item.term,
@@ -129,6 +137,50 @@ export default function AdminAnalyticsPage() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Articulos Totales</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.totalArticles)}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Articulos Publicados</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.publishedArticles)}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Articulos Inactivos</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.inactiveArticles)}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Vistas Blog (30 dias)</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.viewsLast30Days)}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Sesiones Blog (30 dias)</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.uniqueSessionsLast30Days)}</CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Busquedas que llegan al blog</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{formatNumber(metrics.editorial.searchesLeadingToBlogViews)}</CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -167,6 +219,99 @@ export default function AdminAnalyticsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Vistas diarias de articulos</CardTitle>
+            <CardDescription>Ultimos 30 dias de trafico editorial real.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyArticleViews}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="views" stroke="#ea580c" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top busquedas que terminan en blog</CardTitle>
+            <CardDescription>Tendencias de busqueda con navegacion editorial posterior.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!metrics.editorial.topBlogSearchTerms.length ? <EmptyState text="Sin tendencias de busqueda para blog." /> : null}
+            {metrics.editorial.topBlogSearchTerms.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Termino</TableHead>
+                    <TableHead className="text-right">Conteo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {metrics.editorial.topBlogSearchTerms.map((item) => (
+                    <TableRow key={item.term}>
+                      <TableCell>{item.term}</TableCell>
+                      <TableCell className="text-right">{formatNumber(item.count)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Articulos mas vistos</CardTitle>
+            <CardDescription>Ranking por vistas registradas en ventana de 30 dias.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!metrics.editorial.topViewedArticles.length ? <EmptyState text="Sin vistas registradas en articulos." /> : null}
+            {metrics.editorial.topViewedArticles.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Articulo</TableHead>
+                    <TableHead className="text-right">Vistas</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {metrics.editorial.topViewedArticles.map((item) => (
+                    <TableRow key={item.articleId}>
+                      <TableCell>{item.title}</TableCell>
+                      <TableCell className="text-right">{formatNumber(item.views)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Estado de pipeline editorial</CardTitle>
+            <CardDescription>Distribucion de lifecycle para contenidos del blog.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>Publicados: <strong>{formatNumber(metrics.editorial.publishedArticles)}</strong></p>
+            <p>Borradores: <strong>{formatNumber(metrics.editorial.draftArticles)}</strong></p>
+            <p>Inactivos: <strong>{formatNumber(metrics.editorial.inactiveArticles)}</strong></p>
+            <p>Destacados: <strong>{formatNumber(metrics.editorial.featuredArticles)}</strong></p>
           </CardContent>
         </Card>
       </div>

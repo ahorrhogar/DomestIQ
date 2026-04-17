@@ -101,7 +101,21 @@ export interface TrackClickOptions {
   userAgent?: string;
 }
 
+export interface TrackSearchTermOptions {
+  sessionId?: string;
+  resultCount?: number;
+  topProductId?: string;
+  path?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 interface TrackClickRpcResponse {
+  accepted?: boolean;
+  reason?: string;
+}
+
+interface TrackSearchRpcResponse {
   accepted?: boolean;
   reason?: string;
 }
@@ -1359,6 +1373,61 @@ export async function trackClick(
   rankingSignalsFetchedAt = Date.now();
 }
 
+export async function trackSearchTerm(
+  term: string,
+  options?: TrackSearchTermOptions,
+  client?: SupabaseClientLike,
+): Promise<void> {
+  const normalizedTerm = String(term || "").trim();
+  if (normalizedTerm.length < 2) {
+    return;
+  }
+
+  const supabase = client || getSupabaseClient();
+  const { data, error } = await supabase.rpc("track_search_term_secure", {
+    p_term: normalizedTerm,
+    p_session_id: options?.sessionId || null,
+    p_result_count: Math.max(0, Math.floor(options?.resultCount || 0)),
+    p_top_product_id: options?.topProductId || null,
+    p_path: options?.path || null,
+    p_ip_override: options?.ipAddress || null,
+    p_user_agent_override: options?.userAgent || null,
+  });
+
+  if (error) {
+    logger.log({
+      level: "warn",
+      message: "Search tracking RPC failed",
+      timestamp: new Date().toISOString(),
+      context: {
+        term: normalizedTerm,
+        error,
+      },
+    });
+    return;
+  }
+
+  const payload = data && typeof data === "object" ? (data as TrackSearchRpcResponse) : null;
+  if (!payload?.accepted) {
+    return;
+  }
+
+  if (!options?.topProductId) {
+    return;
+  }
+
+  rankingSignals = {
+    ...rankingSignals,
+    viewsByProductId: {
+      ...rankingSignals.viewsByProductId,
+      [options.topProductId]: (rankingSignals.viewsByProductId[options.topProductId] || 0) + 1,
+    },
+    hasViewSignals: true,
+    updatedAt: new Date().toISOString(),
+  };
+  rankingSignalsFetchedAt = Date.now();
+}
+
 export async function getOfferRedirectPayload(
   offerId: string,
   client?: SupabaseClientLike,
@@ -1493,6 +1562,7 @@ export interface SupabaseCatalogSource extends ExtendedCatalogDataSource {
   searchProducts(query: string, limit?: number): Promise<Product[]>;
   getOffersByProduct(productId: string): Offer[];
   trackClick(productId: string, merchantId: string): Promise<void>;
+  trackSearchTerm(term: string, options?: TrackSearchTermOptions): Promise<void>;
   getOfferRedirectPayload(offerId: string): Promise<OfferRedirectRow | null>;
   getRankingSignals(): CatalogRankingSignals;
 }
@@ -1516,6 +1586,7 @@ export const supabaseCatalogSource: SupabaseCatalogSource = {
   getPriceAnalysis: (productId: string): PriceAnalysis =>
     buildPriceAnalysis(currentSnapshot().priceHistoryByProductId.get(productId) || []),
   trackClick: (productId: string, merchantId: string) => trackClick(productId, merchantId),
+  trackSearchTerm: (term: string, options?: TrackSearchTermOptions) => trackSearchTerm(term, options),
   getOfferRedirectPayload: (offerId: string) => getOfferRedirectPayload(offerId),
   getRankingSignals: () => currentRankingSignals(),
 };

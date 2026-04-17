@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { editorialService } from "@/services";
+import { editorialTrackingService } from "@/services/editorialTrackingService";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("es-ES", {
@@ -18,7 +20,25 @@ function formatDate(value: string): string {
 
 const EditorialArticlePage = () => {
   const { slug = "" } = useParams();
-  const article = editorialService.getArticleBySlug(slug);
+  const articleQuery = useQuery({
+    queryKey: ["editorial-article", slug],
+    queryFn: () => editorialService.getArticleBySlugLive(slug),
+    enabled: Boolean(slug),
+    staleTime: 60_000,
+  });
+
+  const article = articleQuery.data;
+
+  useEffect(() => {
+    if (!article?.slug) {
+      return;
+    }
+
+    void editorialTrackingService.trackArticleView({
+      slug: article.slug,
+      path: article.path,
+    });
+  }, [article?.slug, article?.path]);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -78,6 +98,20 @@ const EditorialArticlePage = () => {
       }
     };
   }, [article]);
+
+  if (articleQuery.isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container mx-auto px-4 py-16">
+          <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-8 text-center">
+            <h1 className="font-display text-2xl font-bold">Cargando articulo...</h1>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!article) {
     return (

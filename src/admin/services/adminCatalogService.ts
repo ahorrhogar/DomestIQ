@@ -186,6 +186,20 @@ interface DashboardAnalyticsSnapshot {
   dailyClicks?: Array<{ day?: string; clicks?: number }>;
 }
 
+interface EditorialAnalyticsSnapshot {
+  totalArticles?: number;
+  publishedArticles?: number;
+  draftArticles?: number;
+  inactiveArticles?: number;
+  featuredArticles?: number;
+  viewsLastWindow?: number;
+  uniqueSessionsLastWindow?: number;
+  searchesLeadingToBlogViews?: number;
+  topViewedArticles?: Array<{ articleId?: string; slug?: string; title?: string; views?: number }>;
+  dailyArticleViews?: Array<{ day?: string; views?: number }>;
+  topBlogSearchTerms?: Array<{ term?: string; count?: number }>;
+}
+
 const ADMIN_RATE_LIMIT_POLICIES = {
   productWrite: { scope: "admin:product:write", maxRequests: 60, windowSeconds: 60, blockSeconds: 180 },
   productDelete: { scope: "admin:product:delete", maxRequests: 20, windowSeconds: 60, blockSeconds: 300 },
@@ -745,6 +759,24 @@ function throwIfError(error: SupabaseLikeError | null, fallback: string): never 
   }
 
   throw new Error(mapAdminErrorMessage(error, fallback));
+}
+
+function isMissingEditorialSnapshotRpc(error: SupabaseLikeError | null | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const code = String(error.code || "").toUpperCase();
+  if (code === "PGRST202" || code === "PGRST204" || code === "42883") {
+    return true;
+  }
+
+  const message = [error.message, error.details, error.hint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return message.includes("get_admin_editorial_snapshot") || message.includes("function") && message.includes("does not exist");
 }
 
 function asBoolean(value: unknown): boolean {
@@ -2941,6 +2973,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     totalClicksResult,
     topSearchTermsResult,
     analyticsSnapshotResult,
+    editorialSnapshotResult,
     syncStatus,
   ] = await Promise.all([
     supabase.from("products").select("id", { count: "exact", head: true }),
@@ -2949,6 +2982,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     supabase.from("clicks").select("id", { count: "exact", head: true }),
     supabase.from("search_terms").select("term,count").order("count", { ascending: false }).limit(10),
     supabase.rpc("get_admin_analytics_snapshot", { p_days: 30, p_stale_offer_days: 14 }),
+    supabase.rpc("get_admin_editorial_snapshot", { p_days: 30 }),
     listSyncStatus(),
   ]);
 
@@ -2959,7 +2993,14 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   throwIfError(topSearchTermsResult.error, "No se pudieron cargar terminos de busqueda");
   throwIfError(analyticsSnapshotResult.error, "No se pudo cargar snapshot de analitica admin");
 
+  if (editorialSnapshotResult.error && !isMissingEditorialSnapshotRpc(editorialSnapshotResult.error)) {
+    throwIfError(editorialSnapshotResult.error, "No se pudo cargar snapshot editorial");
+  }
+
   const snapshot = (analyticsSnapshotResult.data || {}) as DashboardAnalyticsSnapshot;
+  const editorialSnapshot = (
+    !editorialSnapshotResult.error ? (editorialSnapshotResult.data || {}) : {}
+  ) as EditorialAnalyticsSnapshot;
 
   const topClickedProducts = (snapshot.topClickedProducts || [])
     .map((row) => ({
@@ -3098,6 +3139,31 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     }))
     .filter((row) => Boolean(row.day));
 
+  const topViewedArticles = (editorialSnapshot.topViewedArticles || [])
+    .map((row) => ({
+      articleId: String(row.articleId || ""),
+      slug: String(row.slug || ""),
+      title: String(row.title || "Articulo"),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.articleId))
+    .slice(0, 10);
+
+  const dailyArticleViews = (editorialSnapshot.dailyArticleViews || [])
+    .map((row) => ({
+      day: String(row.day || ""),
+      views: Number(row.views || 0),
+    }))
+    .filter((row) => Boolean(row.day));
+
+  const topBlogSearchTerms = (editorialSnapshot.topBlogSearchTerms || [])
+    .map((row) => ({
+      term: String(row.term || ""),
+      count: Number(row.count || 0),
+    }))
+    .filter((row) => Boolean(row.term))
+    .slice(0, 10);
+
   const activeProducts = await supabase.from("products").select("id").eq("is_active", true);
   throwIfError(activeProducts.error, "No se pudieron cargar productos activos");
   const activeProductIds = (activeProducts.data || []).map((row) => String(row.id));
@@ -3152,6 +3218,19 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
         ? Number(snapshot.favoritesTotal)
         : null,
     recentAdminActions,
+    editorial: {
+      totalArticles: Number(editorialSnapshot.totalArticles || 0),
+      publishedArticles: Number(editorialSnapshot.publishedArticles || 0),
+      draftArticles: Number(editorialSnapshot.draftArticles || 0),
+      inactiveArticles: Number(editorialSnapshot.inactiveArticles || 0),
+      featuredArticles: Number(editorialSnapshot.featuredArticles || 0),
+      viewsLast30Days: Number(editorialSnapshot.viewsLastWindow || 0),
+      uniqueSessionsLast30Days: Number(editorialSnapshot.uniqueSessionsLastWindow || 0),
+      searchesLeadingToBlogViews: Number(editorialSnapshot.searchesLeadingToBlogViews || 0),
+      topViewedArticles,
+      dailyArticleViews,
+      topBlogSearchTerms,
+    },
     freshness: {
       lastClickAt: snapshot.freshness?.lastClickAt || undefined,
       lastSearchAt: snapshot.freshness?.lastSearchAt || undefined,
