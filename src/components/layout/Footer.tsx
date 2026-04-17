@@ -47,7 +47,7 @@ const Footer = () => {
           <ul className="space-y-1.5">
             <li><Link to="/acerca-de" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Acerca de Homara</Link></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Cómo funciona</a></li>
-            <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Blog</a></li>
+            <li><Link to="/guias" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Guías de compra</Link></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Contacto</a></li>
             <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Prensa</a></li>
           </ul>

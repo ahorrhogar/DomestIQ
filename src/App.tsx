@@ -34,6 +34,12 @@ const AdminImportsPage = lazy(() => import("./pages/admin/AdminImportsPage.tsx")
 const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage.tsx"));
 const AdminAuditPage = lazy(() => import("./pages/admin/AdminAuditPage.tsx"));
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage.tsx"));
+const ArticlesHubPage = lazy(() => import("./pages/ArticlesHubPage.tsx"));
+const AirFryersUnder100GuidePage = lazy(() => import("./pages/blog/AirFryersUnder100GuidePage.tsx"));
+const BestSofasQualityPrice2026Page = lazy(() => import("./pages/blog/BestSofasQualityPrice2026Page.tsx"));
+const BestStandingFansSummer2026Page = lazy(() => import("./pages/blog/BestStandingFansSummer2026Page.tsx"));
+const BestAmazonFansSummer2026Page = lazy(() => import("./pages/blog/BestAmazonFansSummer2026Page.tsx"));
+const EditorialArticlePage = lazy(() => import("./pages/blog/EditorialArticlePage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -52,10 +58,29 @@ function AppRuntime() {
               <Route path="/categoria/:slug/:subSlug" element={<CategoryPage />} />
               <Route path="/producto/:slug" element={<ProductPage />} />
               <Route path="/buscar" element={<SearchPage />} />
+              <Route path="/guias" element={<ArticlesHubPage />} />
+              <Route path="/blog" element={<ArticlesHubPage />} />
               <Route path="/asistente" element={<AssistantPage />} />
               <Route path="/acerca-de" element={<AboutPage />} />
               <Route path="/cookies" element={<CookiesPolicyPage />} />
               <Route path="/politica-cookies" element={<CookiesPolicyPage />} />
+              <Route
+                path="/blog/mejores-freidoras-aire-amazon-2026-menos-100-euros"
+                element={<AirFryersUnder100GuidePage />}
+              />
+              <Route
+                path="/blog/mejores-sofas-calidad-precio-2026"
+                element={<BestSofasQualityPrice2026Page />}
+              />
+              <Route
+                path="/blog/mejores-ventiladores-de-pie-para-este-verano-2026"
+                element={<BestStandingFansSummer2026Page />}
+              />
+              <Route
+                path="/blog/los-7-mejores-ventiladores-amazon-calor-verano-2026"
+                element={<BestAmazonFansSummer2026Page />}
+              />
+              <Route path="/blog/:slug" element={<EditorialArticlePage />} />
 
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin/denegado" element={<AdminDeniedPage />} />

@@ -75,6 +75,8 @@ const Header = () => {
           <div className="hidden md:flex items-center gap-4">
             <Link to="/asistente" className="hover:underline flex items-center gap-1"><Sparkles className="w-3 h-3" /> Asistente de Compras</Link>
             <span>|</span>
+            <Link to="/guias" className="hover:underline">Guias de compra</Link>
+            <span>|</span>
             <a href="#" className="hover:underline">Mis Favoritos</a>
             <span>|</span>
             <a href="#" className="hover:underline">Alertas de Precio</a>
