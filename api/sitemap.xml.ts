@@ -27,6 +27,7 @@ const STATIC_URLS: SitemapUrlEntry[] = [
   { loc: "/blog", changefreq: "daily", priority: "0.8" },
   { loc: "/blog/mejores-freidoras-aire-amazon-2026-menos-100-euros", changefreq: "weekly", priority: "0.8" },
   { loc: "/blog/mejores-sofas-calidad-precio-2026", changefreq: "weekly", priority: "0.8" },
+  { loc: "/blog/10-mesas-de-terraza-baratas-y-bonitas-2026", changefreq: "weekly", priority: "0.8" },
   { loc: "/blog/mejores-ventiladores-de-pie-para-este-verano-2026", changefreq: "weekly", priority: "0.8" },
   { loc: "/blog/los-7-mejores-ventiladores-amazon-calor-verano-2026", changefreq: "weekly", priority: "0.8" },
 ];
