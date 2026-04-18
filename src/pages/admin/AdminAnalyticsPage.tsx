@@ -33,11 +33,13 @@ export default function AdminAnalyticsPage() {
   const metricsQuery = useQuery({
     queryKey: ["admin-analytics-metrics"],
     queryFn: getDashboardMetrics,
+    staleTime: 60_000,
   });
 
   const clicksQuery = useQuery({
     queryKey: ["admin-analytics-clicks"],
     queryFn: () => listClicks(120),
+    staleTime: 30_000,
   });
 
   const dailyClicks = useMemo(() => {

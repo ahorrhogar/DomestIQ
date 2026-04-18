@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { sanitizeNumber, sanitizeText } from "@/infrastructure/security/sanitize";
 import { mapAdminErrorMessage } from "@/admin/services/adminCatalogService";
+import { invalidateEditorialLiveCache } from "@/services/editorialService";
 import type { AdminEditorialArticleRecord, AdminListQuery } from "@/admin/types";
 
 export interface AdminEditorialListFilters extends AdminListQuery {
@@ -265,6 +266,9 @@ export async function upsertEditorialArticle(input: AdminEditorialMutationInput)
     featured: record.isFeatured,
   });
 
+  // Keep editorial public reads fresh after write operations.
+  invalidateEditorialLiveCache();
+
   return record;
 }
 
@@ -281,4 +285,5 @@ export async function deleteEditorialArticle(id: string): Promise<void> {
   }
 
   await safeLogEditorialAction("editorial.article.delete", safeId, {});
+  invalidateEditorialLiveCache();
 }

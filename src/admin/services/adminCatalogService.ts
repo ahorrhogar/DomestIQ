@@ -221,6 +221,14 @@ const OFFER_SOURCE_VALUES: OfferSourceType[] = ["manual", "api", "feed", "future
 const OFFER_UPDATE_MODE_VALUES: OfferUpdateMode[] = ["manual", "auto", "hybrid"];
 const OFFER_SYNC_STATUS_VALUES: OfferSyncStatus[] = ["ok", "stale", "error", "pending"];
 const OFFER_CHECK_DEFAULT_HOURS = 24;
+const DASHBOARD_METRICS_CACHE_TTL_MS = 60_000;
+
+let dashboardMetricsCache: { value: DashboardMetrics; fetchedAt: number } | null = null;
+let dashboardMetricsRefreshPromise: Promise<DashboardMetrics> | null = null;
+
+export function invalidateDashboardMetricsCache(): void {
+  dashboardMetricsCache = null;
+}
 
 export type AdminRateLimitScope = keyof typeof ADMIN_RATE_LIMIT_POLICIES;
 
@@ -2964,6 +2972,15 @@ export async function updateSyncStatus(input: {
 }
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+  if (dashboardMetricsCache && Date.now() - dashboardMetricsCache.fetchedAt < DASHBOARD_METRICS_CACHE_TTL_MS) {
+    return dashboardMetricsCache.value;
+  }
+
+  if (dashboardMetricsRefreshPromise) {
+    return dashboardMetricsRefreshPromise;
+  }
+
+  dashboardMetricsRefreshPromise = (async () => {
   const supabase = getSupabaseClient();
 
   const [
@@ -3190,7 +3207,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     }, 0);
   }
 
-  return {
+  const metrics: DashboardMetrics = {
     totalProducts: totalProductsResult.count || 0,
     activeOffers: activeOffersResult.count || 0,
     activeMerchants: activeMerchantsResult.count || 0,
@@ -3243,4 +3260,18 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     incompleteProducts,
     syncStatus,
   };
+
+  dashboardMetricsCache = {
+    value: metrics,
+    fetchedAt: Date.now(),
+  };
+
+  return metrics;
+  })();
+
+  try {
+    return await dashboardMetricsRefreshPromise;
+  } finally {
+    dashboardMetricsRefreshPromise = null;
+  }
 }

@@ -72,6 +72,37 @@ const BUDGET_LABELS: ArticleFilterOptions["budgetRanges"] = [
   { value: "300-plus", label: "Mas de 300 EUR" },
 ];
 
+const EDITORIAL_LIVE_CACHE_TTL_MS = 10 * 60 * 1000;
+
+interface EditorialLiveCacheEntry {
+  articles: EditorialArticle[];
+  fetchedAt: number;
+}
+
+let editorialLiveCacheEntry: EditorialLiveCacheEntry | null = null;
+let editorialLiveCacheRefreshPromise: Promise<EditorialArticle[]> | null = null;
+
+function getEditorialLiveCacheSnapshot(): EditorialLiveCacheEntry | null {
+  return editorialLiveCacheEntry;
+}
+
+function setEditorialLiveCache(articles: EditorialArticle[]): EditorialArticle[] {
+  editorialLiveCacheEntry = {
+    articles,
+    fetchedAt: Date.now(),
+  };
+
+  return articles;
+}
+
+function isEditorialLiveCacheFresh(entry: EditorialLiveCacheEntry): boolean {
+  return Date.now() - entry.fetchedAt < EDITORIAL_LIVE_CACHE_TTL_MS;
+}
+
+export function invalidateEditorialLiveCache(): void {
+  editorialLiveCacheEntry = null;
+}
+
 class StaticEditorialService implements EditorialService {
   private getSourceArticles(): EditorialArticle[] {
     return editorialStaticSource.getArticles();
@@ -136,13 +167,39 @@ class StaticEditorialService implements EditorialService {
     }
   }
 
-  private async getLiveSourceArticles(): Promise<EditorialArticle[]> {
-    const remote = await this.getRemoteArticles();
-    if (remote && remote.length > 0) {
-      return remote;
+  private async refreshLiveCache(): Promise<EditorialArticle[]> {
+    if (editorialLiveCacheRefreshPromise) {
+      return editorialLiveCacheRefreshPromise;
     }
 
-    return this.getSourceArticles();
+    editorialLiveCacheRefreshPromise = (async () => {
+      const remote = await this.getRemoteArticles();
+      if (remote && remote.length > 0) {
+        return setEditorialLiveCache(remote);
+      }
+
+      return setEditorialLiveCache(this.getSourceArticles());
+    })();
+
+    try {
+      return await editorialLiveCacheRefreshPromise;
+    } finally {
+      editorialLiveCacheRefreshPromise = null;
+    }
+  }
+
+  private async getLiveSourceArticles(): Promise<EditorialArticle[]> {
+    const cacheSnapshot = getEditorialLiveCacheSnapshot();
+
+    if (cacheSnapshot) {
+      if (!isEditorialLiveCacheFresh(cacheSnapshot)) {
+        void this.refreshLiveCache();
+      }
+
+      return cacheSnapshot.articles;
+    }
+
+    return this.refreshLiveCache();
   }
 
   getPublishedArticles(): EditorialArticle[] {

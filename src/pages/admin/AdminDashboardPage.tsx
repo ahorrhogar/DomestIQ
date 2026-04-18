@@ -49,11 +49,13 @@ export default function AdminDashboardPage() {
   const metricsQuery = useQuery({
     queryKey: ["admin-dashboard-metrics"],
     queryFn: getDashboardMetrics,
+    staleTime: 60_000,
   });
 
   const clicksQuery = useQuery({
     queryKey: ["admin-recent-clicks"],
     queryFn: () => listClicks(20),
+    staleTime: 30_000,
   });
 
   if (metricsQuery.isLoading) {
