@@ -9,6 +9,7 @@ import TrustBlock from '@/components/home/TrustBlock';
 import SEOContent from '@/components/home/SEOContent';
 import { analyticsService, categoryService, productService } from '@/services';
 import { computeDiscountPercent } from '@/domain/catalog/product-logic';
+import type { Product } from '@/domain/catalog/types';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, TrendingUp, Flame, Star, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -109,6 +110,70 @@ const Index = () => {
 
     return garden ? `/categoria/${garden.slug}` : '/categoria/jardin-y-exterior';
   }, [categories]);
+
+  const defaultCategoryHref = useMemo(() => {
+    const firstWithProducts = categories.find((category) => category.productCount > 0 && Boolean(category.slug));
+    if (firstWithProducts) {
+      return `/categoria/${firstWithProducts.slug}`;
+    }
+
+    const firstWithSlug = categories.find((category) => Boolean(category.slug));
+    if (firstWithSlug) {
+      return `/categoria/${firstWithSlug.slug}`;
+    }
+
+    return '/';
+  }, [categories]);
+
+  const categoryHrefById = useMemo(() => {
+    const hrefById = new Map<string, string>();
+
+    categories.forEach((category) => {
+      if (!category.slug) {
+        return;
+      }
+
+      hrefById.set(category.id, `/categoria/${category.slug}`);
+      category.subcategories.forEach((subcategory) => {
+        if (!subcategory.slug) {
+          return;
+        }
+
+        hrefById.set(subcategory.id, `/categoria/${category.slug}/${subcategory.slug}`);
+      });
+    });
+
+    return hrefById;
+  }, [categories]);
+
+  const getCollectionShowAllHref = useCallback((products: Product[]): string => {
+    if (!products.length) {
+      return defaultCategoryHref;
+    }
+
+    const countsByCategoryId = new Map<string, number>();
+    products.forEach((product) => {
+      countsByCategoryId.set(product.categoryId, (countsByCategoryId.get(product.categoryId) || 0) + 1);
+    });
+
+    const sortedCategoryIds = [...countsByCategoryId.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([categoryId]) => categoryId);
+
+    for (const categoryId of sortedCategoryIds) {
+      const href = categoryHrefById.get(categoryId);
+      if (href) {
+        return href;
+      }
+    }
+
+    return defaultCategoryHref;
+  }, [categoryHrefById, defaultCategoryHref]);
+
+  const dealsShowAllHref = useMemo(() => getCollectionShowAllHref(deals), [deals, getCollectionShowAllHref]);
+  const topRatedShowAllHref = useMemo(() => getCollectionShowAllHref(topRated), [topRated, getCollectionShowAllHref]);
+  const bestSellersShowAllHref = useMemo(() => getCollectionShowAllHref(bestSellers), [bestSellers, getCollectionShowAllHref]);
+  const favoriteProductsShowAllHref = useMemo(() => getCollectionShowAllHref(favoriteProducts), [favoriteProducts, getCollectionShowAllHref]);
 
   const getRandomCategoryHref = useCallback(() => {
     const pool = categories.filter((category) => category.productCount > 0 && Boolean(category.slug));
@@ -247,7 +312,7 @@ const Index = () => {
         {/* Supergangas - biggest discounts */}
         {deals.length > 0 && (
           <div id="supergangas" className="scroll-mt-28">
-            <ProductGrid products={deals} title="🔥 Supergangas" subtitle="Los mayores descuentos del momento" showAll="/categoria/muebles" />
+            <ProductGrid products={deals} title="🔥 Supergangas" subtitle="Los mayores descuentos del momento" showAll={dealsShowAllHref} />
           </div>
         )}
 
@@ -259,7 +324,7 @@ const Index = () => {
             products={topRated}
             title="⭐ Mejor valorados"
             subtitle="Los productos con mejores opiniones de nuestros usuarios"
-            showAll="/categoria/muebles"
+            showAll={topRatedShowAllHref}
           />
         ) : null}
 
@@ -300,7 +365,7 @@ const Index = () => {
         </section>
 
         {bestSellers.length > 0 ? (
-          <ProductGrid products={bestSellers} title="🏆 Los más vendidos" subtitle="Productos con mayor traccion de usuarios" showAll="/categoria/muebles" />
+          <ProductGrid products={bestSellers} title="🏆 Los más vendidos" subtitle="Productos con mayor traccion de usuarios" showAll={bestSellersShowAllHref} />
         ) : null}
 
         {favoriteProducts.length > 0 ? (
@@ -308,7 +373,7 @@ const Index = () => {
             products={favoriteProducts}
             title="❤️ Favoritos de usuarios"
             subtitle="Los productos mas guardados y recomendados"
-            showAll="/categoria/muebles"
+            showAll={favoriteProductsShowAllHref}
           />
         ) : null}
 
