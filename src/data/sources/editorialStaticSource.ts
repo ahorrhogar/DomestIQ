@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-009",
+    slug: "mejores-frigorificos-combi-bajo-consumo-2026",
+    path: "/blog/mejores-frigorificos-combi-bajo-consumo-2026",
+    title: "Los 5 mejores frigorificos combi de bajo consumo en 2026 para ahorrar en la factura de la luz",
+    excerpt:
+      "Comparativa editorial de 5 frigorificos combi de bajo consumo con clase energetica, capacidad, pros, contras y recomendacion final para ahorrar en la factura.",
+    coverImage: "https://m.media-amazon.com/images/I/51ntIU8zQGL._AC_SX522_.jpg",
+    coverImageAlt: "Frigorifico combi Whirlpool WHK 26404 XP5E",
+    coverTone: "fresh",
+    categorySlug: "electrodomesticos",
+    categoryName: "Electrodomesticos",
+    intent: "comparativa",
+    tags: ["frigorifico combi", "bajo consumo", "comparativa", "eficiencia energetica", "guia de compra"],
+    readMinutes: 15,
+    averageBudget: 927,
+    relatedCategorySlugs: ["electrodomesticos", "cocina", "hogar"],
+    relatedProductSlugs: [],
+    publishedAt: "2026-04-19T22:00:00.000Z",
+    updatedAt: "2026-04-19T22:00:00.000Z",
+    views: 0,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Como se ha construido este top 5",
+        body:
+          "La comparativa cruza clase energetica, precio visto, capacidad util y experiencia real de compra para priorizar ahorro en consumo y buena relacion valor-precio.",
+      },
+      {
+        heading: "Que mirar antes de comprar",
+        body:
+          "Revisa consumo anual, litros utiles, medidas reales de instalacion y tecnologia de frio para evitar sobrecostes y elegir el combi que mejor encaja en tu uso diario.",
+      },
+      {
+        heading: "Resumen editorial",
+        body:
+          "Whirlpool y Hisense destacan en equilibrio de entrada, Haier y Samsung aportan extras y eficiencia alta, y Siemens queda como opcion premium para conservacion avanzada.",
+      },
+    ],
+  },
+  {
     id: "art-008",
     slug: "mejores-robots-de-cocina-baratos-alternativas-thermomix-2026",
     path: "/blog/mejores-robots-de-cocina-baratos-alternativas-thermomix-2026",
