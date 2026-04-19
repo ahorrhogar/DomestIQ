@@ -21,6 +21,8 @@ import SearchPage from "./pages/SearchPage.tsx";
 import AssistantPage from "./pages/AssistantPage.tsx";
 import AboutPage from "./pages/AboutPage.tsx";
 import CookiesPolicyPage from "./pages/CookiesPolicyPage.tsx";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.tsx";
+import LegalNoticePage from "./pages/LegalNoticePage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const AdminLoginPage = lazy(() => import("./pages/admin/AdminLoginPage.tsx"));
@@ -71,6 +73,9 @@ function AppRuntime() {
               <Route path="/acerca-de" element={<AboutPage />} />
               <Route path="/cookies" element={<CookiesPolicyPage />} />
               <Route path="/politica-cookies" element={<CookiesPolicyPage />} />
+              <Route path="/politica-privacidad" element={<PrivacyPolicyPage />} />
+              <Route path="/aviso-legal" element={<LegalNoticePage />} />
+              <Route path="/condiciones-generales-de-uso" element={<LegalNoticePage />} />
               <Route
                 path="/blog/mejores-freidoras-aire-amazon-2026-menos-100-euros"
                 element={<AirFryersUnder100GuidePage />}

@@ -56,8 +56,8 @@ const Footer = () => {
         <div>
           <h3 className="font-semibold text-sm mb-3 text-primary-foreground/90">Legal</h3>
           <ul className="space-y-1.5">
-            <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Política de privacidad</a></li>
-            <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Aviso legal</a></li>
+            <li><Link to="/politica-privacidad" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Política de privacidad</Link></li>
+            <li><Link to="/aviso-legal" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Aviso legal</Link></li>
             <li><Link to="/politica-cookies" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Política de cookies</Link></li>
             <li>
               <button
@@ -68,7 +68,7 @@ const Footer = () => {
                 Configuración de cookies
               </button>
             </li>
-            <li><a href="#" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Condiciones de uso</a></li>
+            <li><Link to="/condiciones-generales-de-uso" className="text-sm text-primary-foreground/60 hover:text-accent transition-colors">Condiciones de uso</Link></li>
           </ul>
         </div>
       </div>

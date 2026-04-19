@@ -26,6 +26,21 @@
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://homara.es/politica-privacidad</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/aviso-legal</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/condiciones-generales-de-uso</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://homara.es/blog</loc>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
