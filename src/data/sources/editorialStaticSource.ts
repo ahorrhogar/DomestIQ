@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-007",
+    slug: "mejores-cafeteras-superautomaticas-amantes-del-cafe-2026",
+    path: "/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026",
+    title: "Las 5 mejores cafeteras superautomaticas de 2026 para verdaderos amantes del cafe",
+    excerpt:
+      "Comparativa editorial premium de 5 cafeteras superautomaticas con precio visto, pros, contras y recomendacion final para comprar mejor.",
+    coverImage: "https://m.media-amazon.com/images/I/61wUUgUQYoL._AC_SX522_.jpg",
+    coverImageAlt: "Cafetera superautomatica Philips Serie 5500",
+    coverTone: "warm",
+    categorySlug: "cocina",
+    categoryName: "Cocina",
+    intent: "comparativa",
+    tags: ["cafetera superautomatica", "comparativa", "cafe", "espresso", "guia de compra"],
+    readMinutes: 13,
+    averageBudget: 336,
+    relatedCategorySlugs: ["cocina", "electrodomesticos"],
+    relatedProductSlugs: [],
+    publishedAt: "2026-04-19T18:10:00.000Z",
+    updatedAt: "2026-04-19T18:10:00.000Z",
+    views: 0,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Como se ha construido este top 5",
+        body:
+          "La comparativa cruza precio visto, valoraciones, facilidad de uso y enfoque de compra real para hogar, priorizando decisiones con menos riesgo.",
+      },
+      {
+        heading: "Que mirar antes de comprar",
+        body:
+          "Define primero si priorizas espresso, bebidas con leche o formato compacto. Esa decision cambia totalmente que modelo te compensa.",
+      },
+      {
+        heading: "Resumen editorial",
+        body:
+          "Philips 5500 lidera en experiencia completa, Philips 2300 y DeLonghi Magnifica S equilibran muy bien, y Cecotec/Melitta cubren perfiles de precio y espacio.",
+      },
+    ],
+  },
+  {
     id: "art-006",
     slug: "review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros",
     path: "/blog/review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros",

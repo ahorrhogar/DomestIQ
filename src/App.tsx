@@ -43,6 +43,7 @@ const BestStandingFansSummer2026Page = lazy(() => import("./pages/blog/BestStand
 const BestAmazonFansSummer2026Page = lazy(() => import("./pages/blog/BestAmazonFansSummer2026Page.tsx"));
 const BestTerraceTablesCheapPretty2026Page = lazy(() => import("./pages/blog/BestTerraceTablesCheapPretty2026Page.tsx"));
 const CosoriAirFryerSingleReview2026Page = lazy(() => import("./pages/blog/CosoriAirFryerSingleReview2026Page.tsx"));
+const BestSuperautomaticCoffeeMachines2026Page = lazy(() => import("./pages/blog/BestSuperautomaticCoffeeMachines2026Page.tsx"));
 const EditorialArticlePage = lazy(() => import("./pages/blog/EditorialArticlePage.tsx"));
 
 const queryClient = new QueryClient();
@@ -92,6 +93,10 @@ function AppRuntime() {
               <Route
                 path="/blog/review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros"
                 element={<CosoriAirFryerSingleReview2026Page />}
+              />
+              <Route
+                path="/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026"
+                element={<BestSuperautomaticCoffeeMachines2026Page />}
               />
               <Route path="/blog/:slug" element={<EditorialArticlePage />} />
 
