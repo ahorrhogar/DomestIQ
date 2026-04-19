@@ -41,6 +41,7 @@ const AirFryersUnder100GuidePage = lazy(() => import("./pages/blog/AirFryersUnde
 const BestSofasQualityPrice2026Page = lazy(() => import("./pages/blog/BestSofasQualityPrice2026Page.tsx"));
 const BestStandingFansSummer2026Page = lazy(() => import("./pages/blog/BestStandingFansSummer2026Page.tsx"));
 const BestAmazonFansSummer2026Page = lazy(() => import("./pages/blog/BestAmazonFansSummer2026Page.tsx"));
+const BestTerraceTablesCheapPretty2026Page = lazy(() => import("./pages/blog/BestTerraceTablesCheapPretty2026Page.tsx"));
 const EditorialArticlePage = lazy(() => import("./pages/blog/EditorialArticlePage.tsx"));
 
 const queryClient = new QueryClient();
@@ -82,6 +83,10 @@ function AppRuntime() {
               <Route
                 path="/blog/los-7-mejores-ventiladores-amazon-calor-verano-2026"
                 element={<BestAmazonFansSummer2026Page />}
+              />
+              <Route
+                path="/blog/10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026"
+                element={<BestTerraceTablesCheapPretty2026Page />}
               />
               <Route path="/blog/:slug" element={<EditorialArticlePage />} />
 

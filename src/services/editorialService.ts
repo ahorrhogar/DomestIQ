@@ -82,6 +82,24 @@ interface EditorialLiveCacheEntry {
 let editorialLiveCacheEntry: EditorialLiveCacheEntry | null = null;
 let editorialLiveCacheRefreshPromise: Promise<EditorialArticle[]> | null = null;
 
+function mergeEditorialArticles(remoteArticles: EditorialArticle[], staticArticles: EditorialArticle[]): EditorialArticle[] {
+  const byKey = new Map<string, EditorialArticle>();
+
+  for (const article of staticArticles) {
+    const key = `${article.slug.toLowerCase()}|${article.path.toLowerCase()}`;
+    byKey.set(key, article);
+  }
+
+  for (const article of remoteArticles) {
+    const key = `${article.slug.toLowerCase()}|${article.path.toLowerCase()}`;
+    byKey.set(key, article);
+  }
+
+  return [...byKey.values()].sort(
+    (left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt),
+  );
+}
+
 function getEditorialLiveCacheSnapshot(): EditorialLiveCacheEntry | null {
   return editorialLiveCacheEntry;
 }
@@ -174,11 +192,13 @@ class StaticEditorialService implements EditorialService {
 
     editorialLiveCacheRefreshPromise = (async () => {
       const remote = await this.getRemoteArticles();
+      const sourceArticles = this.getSourceArticles();
+
       if (remote && remote.length > 0) {
-        return setEditorialLiveCache(remote);
+        return setEditorialLiveCache(mergeEditorialArticles(remote, sourceArticles));
       }
 
-      return setEditorialLiveCache(this.getSourceArticles());
+      return setEditorialLiveCache(sourceArticles);
     })();
 
     try {

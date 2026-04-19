@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-005",
+    slug: "10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026",
+    path: "/blog/10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026",
+    title: "10 mesas de terraza baratas y bonitas en Amazon para comprar en 2026",
+    excerpt:
+      "Comparativa real de 10 mesas de terraza con precio visto, estrellas y recomendaciones para balcon y jardin.",
+    coverImage: "https://m.media-amazon.com/images/I/81mysC2tsNL._AC_SX522_.jpg",
+    coverImageAlt: "Mesa de terraza plegable de madera para balcon",
+    coverTone: "calm",
+    categorySlug: "jardin",
+    categoryName: "Jardin",
+    intent: "calidad-precio",
+    tags: ["mesa de terraza", "jardin", "amazon", "calidad precio", "guia de compra"],
+    readMinutes: 14,
+    averageBudget: 84,
+    relatedCategorySlugs: ["jardin", "muebles", "hogar"],
+    relatedProductSlugs: ["set-ollas-wmf-premium"],
+    publishedAt: "2026-04-19T16:00:00.000Z",
+    updatedAt: "2026-04-19T16:30:00.000Z",
+    views: 1080,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Como se ha construido este top 10",
+        body:
+          "La seleccion combina precio visible, valoraciones, formato de mesa y utilidad real por tipo de espacio para reducir riesgo de compra.",
+      },
+      {
+        heading: "Que mirar antes de decidir",
+        body:
+          "Define uso real, mide el espacio disponible y revisa coste total con envio y devolucion. En mesas de terraza, esos tres puntos evitan la mayoria de errores.",
+      },
+      {
+        heading: "Resumen editorial",
+        body:
+          "Para balcon pequeno funcionan mejor las auxiliares compactas. Para comidas frecuentes conviene subir a mesa media o extensible aunque el presupuesto sea mayor.",
+      },
+    ],
+  },
+  {
     id: "art-004",
     slug: "los-7-mejores-ventiladores-amazon-calor-verano-2026",
     path: "/blog/los-7-mejores-ventiladores-amazon-calor-verano-2026",
