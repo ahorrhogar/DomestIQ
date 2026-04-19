@@ -32,6 +32,7 @@ const STATIC_URLS: SitemapUrlEntry[] = [
   { loc: "/blog/10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026", changefreq: "weekly", priority: "0.8" },
   { loc: "/blog/review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros", changefreq: "weekly", priority: "0.8" },
   { loc: "/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026", changefreq: "weekly", priority: "0.8" },
+  { loc: "/blog/mejores-robots-de-cocina-baratos-alternativas-thermomix-2026", changefreq: "weekly", priority: "0.8" },
 ];
 
 function resolveEnv(name: string): string {

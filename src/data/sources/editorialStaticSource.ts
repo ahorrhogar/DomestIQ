@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-008",
+    slug: "mejores-robots-de-cocina-baratos-alternativas-thermomix-2026",
+    path: "/blog/mejores-robots-de-cocina-baratos-alternativas-thermomix-2026",
+    title: "Mejores robots de cocina baratos: 5 alternativas a Thermomix con muy buena relacion calidad-precio",
+    excerpt:
+      "Comparativa editorial de 5 alternativas a Thermomix con precio visto, caracteristicas clave, pros, contras y recomendacion final para comprar mejor.",
+    coverImage: "https://m.media-amazon.com/images/I/51sB4hpk8OL._AC_SX425_.jpg",
+    coverImageAlt: "Robot de cocina Cecotec Mambo 11090",
+    coverTone: "warm",
+    categorySlug: "cocina",
+    categoryName: "Cocina",
+    intent: "comparativa",
+    tags: ["robot de cocina", "alternativas a thermomix", "comparativa", "guia de compra", "cocina"],
+    readMinutes: 14,
+    averageBudget: 315,
+    relatedCategorySlugs: ["cocina", "electrodomesticos"],
+    relatedProductSlugs: [],
+    publishedAt: "2026-04-19T20:20:00.000Z",
+    updatedAt: "2026-04-19T20:20:00.000Z",
+    views: 0,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Como se ha construido este top 5",
+        body:
+          "La comparativa cruza precio visto, valoraciones reales y experiencia de uso para identificar alternativas a Thermomix con mejor relacion calidad-precio.",
+      },
+      {
+        heading: "Que mirar antes de comprar",
+        body:
+          "Define uso real, capacidad util y ecosistema de recetas. En robots de cocina, esos tres puntos marcan la diferencia en satisfaccion tras la compra.",
+      },
+      {
+        heading: "Resumen editorial",
+        body:
+          "Mambo 11090 destaca en equilibrio global, Mambo Touch y RK7 en experiencia guiada, y NEWLUX V50 en precio minimo para cocina diaria basica.",
+      },
+    ],
+  },
+  {
     id: "art-007",
     slug: "mejores-cafeteras-superautomaticas-amantes-del-cafe-2026",
     path: "/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026",

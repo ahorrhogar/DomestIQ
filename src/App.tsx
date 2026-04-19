@@ -44,6 +44,7 @@ const BestAmazonFansSummer2026Page = lazy(() => import("./pages/blog/BestAmazonF
 const BestTerraceTablesCheapPretty2026Page = lazy(() => import("./pages/blog/BestTerraceTablesCheapPretty2026Page.tsx"));
 const CosoriAirFryerSingleReview2026Page = lazy(() => import("./pages/blog/CosoriAirFryerSingleReview2026Page.tsx"));
 const BestSuperautomaticCoffeeMachines2026Page = lazy(() => import("./pages/blog/BestSuperautomaticCoffeeMachines2026Page.tsx"));
+const BestThermomixAlternatives2026Page = lazy(() => import("./pages/blog/BestThermomixAlternatives2026Page.tsx"));
 const EditorialArticlePage = lazy(() => import("./pages/blog/EditorialArticlePage.tsx"));
 
 const queryClient = new QueryClient();
@@ -97,6 +98,10 @@ function AppRuntime() {
               <Route
                 path="/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026"
                 element={<BestSuperautomaticCoffeeMachines2026Page />}
+              />
+              <Route
+                path="/blog/mejores-robots-de-cocina-baratos-alternativas-thermomix-2026"
+                element={<BestThermomixAlternatives2026Page />}
               />
               <Route path="/blog/:slug" element={<EditorialArticlePage />} />
 
