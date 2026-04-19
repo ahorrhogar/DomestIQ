@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-006",
+    slug: "review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros",
+    path: "/blog/review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros",
+    title: "COSORI 5,7 L por menos de 100 EUR: review honesta de la mejor freidora de aire calidad precio",
+    excerpt:
+      "Analisis real de la COSORI 5,7 L: opinion editorial, ficha tecnica, pros, contras y veredicto final para comprar mejor.",
+    coverImage: "https://m.media-amazon.com/images/I/81HDt6NDs7L._AC_SX522_.jpg",
+    coverImageAlt: "COSORI Air Fryer 5,7 L en cocina",
+    coverTone: "warm",
+    categorySlug: "cocina",
+    categoryName: "Cocina",
+    intent: "calidad-precio",
+    tags: ["freidora de aire", "cosori", "review", "calidad precio", "menos de 100 eur"],
+    readMinutes: 10,
+    averageBudget: 85,
+    relatedCategorySlugs: ["cocina", "electrodomesticos"],
+    relatedProductSlugs: [],
+    publishedAt: "2026-04-19T17:15:00.000Z",
+    updatedAt: "2026-04-19T17:15:00.000Z",
+    views: 0,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Mi opinion",
+        body:
+          "La COSORI 5,7 L destaca por equilibrio entre precio, robustez y facilidad de uso para 2-4 personas en uso frecuente.",
+      },
+      {
+        heading: "Lo mejor y lo mejorable",
+        body:
+          "Puntos fuertes: capacidad util, potencia de 1700 W y gran base de valoraciones. Punto a vigilar: no es la opcion mas barata del mercado.",
+      },
+      {
+        heading: "Veredicto",
+        body:
+          "Si buscas una freidora de aire calidad precio por debajo de 100 EUR con enfoque de compra segura, es una de las opciones mas consistentes.",
+      },
+    ],
+  },
+  {
     id: "art-005",
     slug: "10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026",
     path: "/blog/10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026",
