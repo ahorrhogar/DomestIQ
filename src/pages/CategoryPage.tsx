@@ -3,10 +3,12 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import Breadcrumb from '@/components/layout/Breadcrumb';
 import ProductCard from '@/components/product/ProductCard';
+import CategorySeoBlock from '@/components/editorial/CategorySeoBlock';
 import { useState, useMemo, useEffect } from 'react';
 import { SlidersHorizontal, X, ArrowUpDown, Star } from 'lucide-react';
 import { analyticsService, categoryService, offerService, productService } from '@/services';
 import type { ProductSortBy } from '@/domain/catalog/types';
+import { buildCategorySeoDocument } from '@/domain/catalog/category-seo';
 
 const sortOptions: Array<{ value: ProductSortBy; label: string }> = [
   { value: 'popular', label: 'Más populares' },
@@ -17,13 +19,26 @@ const sortOptions: Array<{ value: ProductSortBy; label: string }> = [
   { value: 'newest', label: 'Más recientes' },
 ];
 
+function ensureMetaTag(selector: string, create: () => HTMLElement): HTMLElement {
+  const existing = document.head.querySelector(selector);
+  if (existing) {
+    return existing as HTMLElement;
+  }
+
+  const created = create();
+  document.head.appendChild(created);
+  return created;
+}
+
 const CategoryPage = () => {
   const { slug, subSlug } = useParams();
+  const categories = categoryService.getAllCategories();
   const category = categoryService.getCategoryBySlug(slug);
   const subcategory = category ? categoryService.getSubcategoryBySlug(category, subSlug) : undefined;
   const categoryId = category?.id;
   const categorySlug = category?.slug;
   const subcategoryId = subcategory?.id;
+  const allProducts = productService.getAllProducts();
   const merchants = offerService.getMerchants();
 
   const [sortBy, setSortBy] = useState<ProductSortBy>('popular');
@@ -42,6 +57,10 @@ const CategoryPage = () => {
   const categoryProducts = useMemo(
     () => productService.getProductsByCategory(category?.id),
     [category?.id],
+  );
+  const seoProducts = useMemo(
+    () => productService.getProductsByCategory(category?.id, subcategory?.id),
+    [category?.id, subcategory?.id],
   );
   const filterMetadata = useMemo(
     () => productService.getFilterMetadata(categoryProducts),
@@ -131,6 +150,129 @@ const CategoryPage = () => {
     onlyNew,
   ]);
 
+  const seoDocument = useMemo(() => {
+    if (!category) {
+      return null;
+    }
+
+    return buildCategorySeoDocument({
+      category,
+      subcategory,
+      categories,
+      products: seoProducts,
+      allProducts,
+    });
+  }, [allProducts, categories, category, subcategory, seoProducts]);
+
+  useEffect(() => {
+    if (!seoDocument || !category) {
+      return;
+    }
+
+    const previousTitle = document.title;
+
+    const descriptionTag = ensureMetaTag('meta[name="description"]', () => {
+      const node = document.createElement('meta');
+      node.setAttribute('name', 'description');
+      return node;
+    }) as HTMLMetaElement;
+
+    const ogTitleTag = ensureMetaTag('meta[property="og:title"]', () => {
+      const node = document.createElement('meta');
+      node.setAttribute('property', 'og:title');
+      return node;
+    }) as HTMLMetaElement;
+
+    const ogDescriptionTag = ensureMetaTag('meta[property="og:description"]', () => {
+      const node = document.createElement('meta');
+      node.setAttribute('property', 'og:description');
+      return node;
+    }) as HTMLMetaElement;
+
+    const canonicalTag = ensureMetaTag('link[rel="canonical"]', () => {
+      const node = document.createElement('link');
+      node.setAttribute('rel', 'canonical');
+      return node;
+    }) as HTMLLinkElement;
+
+    const previousDescription = descriptionTag.getAttribute('content') || '';
+    const previousOgTitle = ogTitleTag.getAttribute('content') || '';
+    const previousOgDescription = ogDescriptionTag.getAttribute('content') || '';
+    const previousCanonical = canonicalTag.getAttribute('href') || '';
+
+    const canonicalUrl = `https://homara.es${seoDocument.canonicalPath}`;
+
+    document.title = seoDocument.title;
+    descriptionTag.setAttribute('content', seoDocument.metaDescription);
+    ogTitleTag.setAttribute('content', seoDocument.title);
+    ogDescriptionTag.setAttribute('content', seoDocument.metaDescription);
+    canonicalTag.setAttribute('href', canonicalUrl);
+
+    const scriptId = 'homara-category-schema';
+    const previousScript = document.getElementById(scriptId);
+    if (previousScript) {
+      previousScript.remove();
+    }
+
+    const schemaNode = document.createElement('script');
+    schemaNode.id = scriptId;
+    schemaNode.type = 'application/ld+json';
+    schemaNode.text = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: seoDocument.h1,
+      description: seoDocument.schemaDescription,
+      url: canonicalUrl,
+      breadcrumb: {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          {
+            '@type': 'ListItem',
+            position: 1,
+            name: 'Inicio',
+            item: 'https://homara.es/',
+          },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: category.name,
+            item: `https://homara.es/categoria/${category.slug}`,
+          },
+          ...(subcategory
+            ? [
+                {
+                  '@type': 'ListItem',
+                  position: 3,
+                  name: subcategory.name,
+                  item: canonicalUrl,
+                },
+              ]
+            : []),
+        ],
+      },
+      mainEntity: {
+        '@type': 'ItemList',
+        numberOfItems: seoProducts.length,
+        itemListElement: seoProducts.slice(0, 12).map((product, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          name: product.name,
+          url: `https://homara.es/producto/${product.slug}`,
+        })),
+      },
+    });
+    document.head.appendChild(schemaNode);
+
+    return () => {
+      document.title = previousTitle;
+      descriptionTag.setAttribute('content', previousDescription);
+      ogTitleTag.setAttribute('content', previousOgTitle);
+      ogDescriptionTag.setAttribute('content', previousOgDescription);
+      canonicalTag.setAttribute('href', previousCanonical);
+      schemaNode.remove();
+    };
+  }, [category, seoDocument, seoProducts, subcategory]);
+
   const clearAllFilters = () => {
     setSelectedBrands([]);
     setSelectedMaterials([]);
@@ -178,9 +320,9 @@ const CategoryPage = () => {
           <Breadcrumb items={breadcrumbs} />
 
           <div className="mb-6">
-            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground">
-              {subcategory ? subcategory.name : category.name}
-            </h2>
+            <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground">
+              {seoDocument?.h1 || (subcategory ? subcategory.name : category.name)}
+            </h1>
             <p className="text-muted-foreground mt-1">{category.description}</p>
           </div>
 
@@ -380,16 +522,7 @@ const CategoryPage = () => {
           </div>
         </div>
 
-        {/* SEO content */}
-        <div className="container mx-auto px-4 py-12">
-          <div className="max-w-3xl">
-            <h3 className="font-display text-lg font-bold mb-2">Compara precios de {category.name.toLowerCase()} en España</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              En Homara encontrarás los mejores precios de {category.name.toLowerCase()} comparando ofertas de más de 200 tiendas online en España. 
-              {category.description} Encuentra el producto perfecto al mejor precio y compra con confianza.
-            </p>
-          </div>
-        </div>
+        {seoDocument ? <CategorySeoBlock document={seoDocument} /> : null}
       </main>
       <Footer />
     </div>

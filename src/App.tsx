@@ -48,6 +48,7 @@ const CosoriAirFryerSingleReview2026Page = lazy(() => import("./pages/blog/Cosor
 const BestSuperautomaticCoffeeMachines2026Page = lazy(() => import("./pages/blog/BestSuperautomaticCoffeeMachines2026Page.tsx"));
 const BestThermomixAlternatives2026Page = lazy(() => import("./pages/blog/BestThermomixAlternatives2026Page.tsx"));
 const BestLowConsumptionFridgeFreezers2026Page = lazy(() => import("./pages/blog/BestLowConsumptionFridgeFreezers2026Page.tsx"));
+const BestNoTurntableMicrowaves2026Page = lazy(() => import("./pages/blog/BestNoTurntableMicrowaves2026Page.tsx"));
 const EditorialArticlePage = lazy(() => import("./pages/blog/EditorialArticlePage.tsx"));
 
 const queryClient = new QueryClient();
@@ -112,6 +113,10 @@ function AppRuntime() {
               <Route
                 path="/blog/mejores-frigorificos-combi-bajo-consumo-2026"
                 element={<BestLowConsumptionFridgeFreezers2026Page />}
+              />
+              <Route
+                path="/blog/mejores-microondas-sin-plato-giratorio-2026"
+                element={<BestNoTurntableMicrowaves2026Page />}
               />
               <Route path="/blog/:slug" element={<EditorialArticlePage />} />
 

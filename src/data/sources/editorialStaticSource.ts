@@ -3,6 +3,47 @@ import type { EditorialArticle } from "@/domain/editorial/types";
 
 const editorialArticles: EditorialArticle[] = [
   {
+    id: "art-010",
+    slug: "mejores-microondas-sin-plato-giratorio-2026",
+    path: "/blog/mejores-microondas-sin-plato-giratorio-2026",
+    title: "Los 8 mejores microondas sin plato giratorio de 2026: comparativa real para comprar mejor",
+    excerpt:
+      "Comparativa editorial de 8 microondas sin plato giratorio con precio visto, capacidad, potencia y recomendacion final por tipo de uso.",
+    coverImage: "https://m.media-amazon.com/images/I/61H0pyEDpZL._AC_SL1000_.jpg",
+    coverImageAlt: "Microondas Severin MW 7770 sin plato giratorio",
+    coverTone: "fresh",
+    categorySlug: "electrodomesticos",
+    categoryName: "Electrodomesticos",
+    intent: "comparativa",
+    tags: ["microondas sin plato giratorio", "microondas flatbed", "comparativa", "cocina", "guia de compra"],
+    readMinutes: 16,
+    averageBudget: 154,
+    relatedCategorySlugs: ["electrodomesticos", "cocina", "hogar"],
+    relatedProductSlugs: [],
+    publishedAt: "2026-04-21T10:30:00.000Z",
+    updatedAt: "2026-04-21T10:30:00.000Z",
+    views: 0,
+    isFeatured: true,
+    status: "published",
+    sections: [
+      {
+        heading: "Como se ha construido este top 8",
+        body:
+          "La comparativa cruza precio visible, capacidad, potencia de microondas y utilidad real por perfil de compra para reducir riesgo antes de pagar.",
+      },
+      {
+        heading: "Que mirar antes de comprar un microondas sin plato giratorio",
+        body:
+          "Prioriza capacidad util, potencia real y tipo de programas. En modelos flatbed tambien conviene revisar reparto de calor, facilidad de limpieza y coste total final con envio.",
+      },
+      {
+        heading: "Resumen editorial",
+        body:
+          "Para presupuesto ajustado destacan Severin y Cecotec. Para mas capacidad y grill, los modelos CASO suben el nivel. Toshiba y Samsung equilibran muy bien para uso familiar diario.",
+      },
+    ],
+  },
+  {
     id: "art-009",
     slug: "mejores-frigorificos-combi-bajo-consumo-2026",
     path: "/blog/mejores-frigorificos-combi-bajo-consumo-2026",

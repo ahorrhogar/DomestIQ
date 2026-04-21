@@ -46,48 +46,168 @@
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://homara.es/blog/mejores-freidoras-aire-amazon-2026-menos-100-euros</loc>
+    <loc>https://homara.es/categoria/climatizacin</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/jardn-y-exterior</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/muebles</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/muebles/almacenaje</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/muebles/colchones</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/muebles/oficina-en-casa</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/muebles/sofas</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/aspiradoras</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/cafeteras</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/electrodomsticos-pequeos</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/lavadoras</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/lavavajillas</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/microondas</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/neveras</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/electrodomsticos-y-cocina/utensilios-de-cocina</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/jardn-y-exterior/cocina-de-exterior</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/jardn-y-exterior/herramientas-de-jardn</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/jardn-y-exterior/mesas-de-exterior</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/jardn-y-exterior/mobiliario-de-exterior</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/climatizacin/aires-acondicionados</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/climatizacin/estufas</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/categoria/climatizacin/ventiladores</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/blog/mejores-freidoras-aire-amazon-2026-menos-100-euros</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/mejores-sofas-calidad-precio-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/mejores-ventiladores-de-pie-para-este-verano-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/los-7-mejores-ventiladores-amazon-calor-verano-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/10-mesas-de-terraza-baratas-y-bonitas-en-amazon-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/review-cosori-5-7l-freidora-aire-calidad-precio-menos-100-euros</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/mejores-cafeteras-superautomaticas-amantes-del-cafe-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/mejores-robots-de-cocina-baratos-alternativas-thermomix-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://homara.es/blog/mejores-frigorificos-combi-bajo-consumo-2026</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://homara.es/blog/mejores-microondas-sin-plato-giratorio-2026</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>
